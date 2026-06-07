@@ -2,8 +2,8 @@ name: Job Scraper
 
 on:
   schedule:
-    # 4x/day Mon–Fri: 10:00, 13:00, 16:00, 19:00 Israel time (UTC+3)
-    - cron: "0 7,10,13,16 * * 1-5"
+    # 4x/day Mon–Fri: 9:00, 12:00, 15:00, 18:00 Israel time (UTC+3 in summer)
+    - cron: "0 6,9,12,15 * * 1-5"
   workflow_dispatch:  # manual trigger for testing
 
 jobs:
