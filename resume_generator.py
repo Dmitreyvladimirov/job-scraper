@@ -6,17 +6,22 @@ from utils import retry
 
 logger = logging.getLogger(__name__)
 
+SKEPTIC_BUZZWORDS = [
+    "strong track record", "scalable", "high-impact", "fast-paced",
+    "measurable outcomes", "robust", "leveraged", "boosted",
+    "end-to-end" , "seamlessly", "proactively",
+]
 
-def generate(job: dict, ats_result, resume_text: str) -> str:
+
+def generate(job: dict, ats_result, resume_text: str) -> dict | None:
     """
-    Generate an adapted resume as simple HTML for the given vacancy.
-    GPT selects the right About Me variant and most relevant bullets.
-    Returns HTML string ready for Google Docs upload.
+    Select adapted resume content from base_resume.md for the given vacancy.
+    Returns a dict of {placeholder: replacement_text} or None on failure.
     """
     matched = ", ".join(ats_result.matched) if ats_result.matched else "general PM skills"
-    missed = ", ".join(ats_result.missed) if ats_result.missed else "none"
+    missed  = ", ".join(ats_result.missed)  if ats_result.missed  else "none"
 
-    prompt = f"""You are helping Dimitry Kucher adapt his resume for a specific job.
+    prompt = f"""You are adapting Dimitry Kucher's resume for a specific job vacancy.
 
 JOB: {job['title']} at {job['company']}
 LOCATION: {job.get('location', 'Remote')}
@@ -24,42 +29,59 @@ ATS SCORE: {ats_result.score}/100
 MATCHED KEYWORDS: {matched}
 MISSING KEYWORDS: {missed}
 
-JOB DESCRIPTION (first 2000 chars):
-{job['description'][:2000]}
+JOB DESCRIPTION (first 2500 chars):
+{job.get('description', '')[:2500]}
 
-CANDIDATE'S FULL RESUME (source of truth):
-{resume_text[:5000]}
+BASE RESUME (source of truth — use ONLY content from here, never invent):
+{resume_text[:7000]}
 
-TASK:
-1. Choose the most appropriate ABOUT ME variant from the resume (or write a new one based on existing variants, tailored to this company and role — mention the company's domain)
-2. Select the most relevant 3-4 bullet points per role (IronCircle, Skillfactory, GeekBrains)
-3. Keep Education and Skills sections unchanged
+---
 
-OUTPUT: Simple HTML only. Use <h1> for name, <h2> for section headers, <h3> for job titles, <ul><li> for bullets, <p> for paragraphs. No CSS, no style attributes. Simple semantic HTML only.
+TASK: Return a JSON object with these exact keys filled from the base resume above.
 
-Structure:
-<h1>Dimitry Kucher</h1>
-<p>Senior Product Manager | [subtitle line matching the role]</p>
-<p>dmitreyvladimirovic@gmail.com | linkedin.com/in/dmitreyvladimirovic</p>
+Rules:
+1. Determine the domain of this vacancy: ai / fintech / saas / edtech / data / cyber / growth
+2. Pick the matching SUBTITLE variant tagged with that domain
+3. Pick the matching ABOUT ME variant tagged with that domain. Mention {job['company']} or its domain in 1 sentence.
+4. Pick the matching SKILLS block tagged with that domain (all 4 lines, keep the "Tools:" line unchanged)
+5. Pick the best intro sentence for each company that fits this domain
+6. Pick bullets from the base resume: choose ones whose tags match the job domain and that cover the matched keywords. Aim for 4-5 bullets per company — enough to fill 1 page. Use ONLY existing bullet text, do not invent or combine.
+7. Skeptic check — for every bullet and intro sentence: if it contains a vague buzzword without a specific number ({', '.join(SKEPTIC_BUZZWORDS[:6])}...), rewrite it with a concrete number or swap for a different bullet that already has one.
 
-<h2>About Me</h2>
-<p>[chosen/adapted About Me]</p>
-
-<h2>Experience</h2>
-<h3>[Company] — [Title] ([Dates])</h3>
-<ul><li>...</li></ul>
-
-<h2>Education</h2>
-...
-
-<h2>Skills</h2>
-..."""
+Return ONLY valid JSON, no markdown, no explanation:
+{{
+  "SUBTITLE": "one-line subtitle matching the domain",
+  "ABOUT_ME": "2-3 sentence about me paragraph",
+  "SKILL_1": "Category name: skill1, skill2, ...",
+  "SKILL_2": "Category name: skill1, skill2, ...",
+  "SKILL_3": "Category name: skill1, skill2, ...",
+  "SKILL_4": "Category name: skill1, skill2, ...",
+  "IC_INTRO": "one sentence IronCircle intro",
+  "IC_B1": "bullet text",
+  "IC_B2": "bullet text",
+  "IC_B3": "bullet text",
+  "IC_B4": "bullet text",
+  "IC_B5": "bullet text or empty string if not needed",
+  "SF_INTRO": "one sentence Skillfactory intro",
+  "SF_B1": "bullet text",
+  "SF_B2": "bullet text",
+  "SF_B3": "bullet text",
+  "SF_B4": "bullet text",
+  "SF_B5": "bullet text or empty string if not needed",
+  "SF_B6": "bullet text or empty string if not needed",
+  "GB_INTRO": "one sentence GeekBrains intro",
+  "GB_B1": "bullet text",
+  "GB_B2": "bullet text",
+  "GB_B3": "bullet text",
+  "GB_B4": "bullet text or empty string if not needed"
+}}"""
 
     payload = json.dumps({
         "model": "gpt-4o-mini",
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 2000,
+        "max_tokens": 2500,
         "temperature": 0.2,
+        "response_format": {"type": "json_object"},
     }).encode("utf-8")
 
     req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=payload)
@@ -68,14 +90,12 @@ Structure:
 
     try:
         data = retry(lambda: json.loads(
-            urllib.request.urlopen(req, timeout=45).read().decode("utf-8")
+            urllib.request.urlopen(req, timeout=60).read().decode("utf-8")
         ))
-        html = data["choices"][0]["message"]["content"].strip()
-        # Strip markdown code fences if GPT adds them
-        if html.startswith("```"):
-            html = html.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        logger.info(f"Resume generated: {len(html)} chars")
-        return html
+        content = data["choices"][0]["message"]["content"]
+        result = json.loads(content)
+        logger.info(f"Resume content generated for {job['company']} (domain detected)")
+        return result
     except Exception as e:
         logger.error(f"Resume generation failed: {e}")
-        return ""
+        return None

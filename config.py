@@ -18,6 +18,8 @@ def validate_secrets() -> None:
     if missing:
         raise EnvironmentError(f"Missing required env vars: {', '.join(missing)}")
 
+RESUME_TEMPLATE_DOC_ID = "1dIREOUB5YOf-Rw0_CY2NMrtSrFhIt-TSozZetvF7CoQ"
+
 ATS_THRESHOLD = 60
 RESUME_DOC_THRESHOLD = 70   # generate Google Doc draft only for score >= this
 COMPANY_COOLDOWN_DAYS = 90  # warn if applied to same company within this period

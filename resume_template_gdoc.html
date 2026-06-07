@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #1a1a1a; margin: 0; padding: 20px; }
+  table.layout { width: 100%; border-collapse: collapse; }
+  td.left  { width: 32%; vertical-align: top; padding-right: 18px; border-right: 1px solid #e0e0e0; }
+  td.right { width: 68%; vertical-align: top; padding-left: 18px; }
+
+  h1.name { font-size: 22pt; font-weight: 900; color: #111; margin: 0 0 2px 0; line-height: 1.1; }
+  .subtitle { font-size: 10pt; font-weight: bold; color: #111; margin-bottom: 10px; line-height: 1.35; }
+  .contact { font-size: 8.5pt; color: #222; line-height: 1.7; margin-bottom: 14px; }
+  .contact a { color: #1a5db5; }
+
+  h2 { font-size: 9pt; font-weight: bold; color: #1a5db5; text-transform: uppercase;
+       letter-spacing: 0.3px; margin: 14px 0 5px 0; border: none; padding: 0; }
+
+  .edu-entry { margin-bottom: 8px; }
+  .edu-title { font-weight: bold; font-size: 9pt; }
+  .edu-org   { font-size: 8.5pt; color: #333; }
+  .edu-year  { font-size: 8.5pt; color: #555; }
+
+  .skill-block { margin-bottom: 7px; font-size: 8.5pt; line-height: 1.45; }
+  .skill-cat   { font-weight: bold; }
+
+  .about-text { font-size: 9.5pt; line-height: 1.55; margin-bottom: 4px; }
+
+  .job-entry { margin-bottom: 14px; }
+  .job-title { font-size: 9.5pt; font-weight: bold; }
+  .job-title em { font-weight: normal; font-style: italic; }
+  .job-dates { font-size: 8.5pt; color: #444; margin: 1px 0 4px 0; }
+  .job-intro { font-size: 9.5pt; line-height: 1.5; margin-bottom: 5px; }
+
+  ul { list-style: none; padding: 0; margin: 0; }
+  ul li { font-size: 9.5pt; line-height: 1.5; padding-left: 12px; position: relative; margin-bottom: 2px; }
+  ul li::before { content: "\2013"; position: absolute; left: 0; }
+</style>
+</head>
+<body>
+
+<table class="layout">
+<tr>
+
+<td class="left">
+  <h1 class="name">Dimitry Kucher</h1>
+  <div class="subtitle">{{SUBTITLE}}</div>
+
+  <div class="contact">
+    Tel Aviv, Israel<br>
+    +972-55-288-1443<br>
+    dmitreyvladimirovic@gmail.com<br>
+    linkedin.com/in/dimitry-kucher/
+  </div>
+
+  <h2>Education</h2>
+  <div class="edu-entry">
+    <div class="edu-title">Product Management</div>
+    <div class="edu-org">IBM, Coursera</div>
+    <div class="edu-year">2023</div>
+  </div>
+  <div class="edu-entry">
+    <div class="edu-title">BSc in Engineering in Mobile Telecommunications</div>
+    <div class="edu-org">Omsk State Technical University, Russia</div>
+    <div class="edu-year">2014</div>
+  </div>
+
+  <h2>Skills</h2>
+  {{SKILLS}}
+
+  <h2>Languages</h2>
+  <div style="font-size:8.5pt;">English, Spanish, Hebrew, Russian</div>
+</td>
+
+<td class="right">
+  <h2>About Me</h2>
+  <p class="about-text">{{ABOUT_ME}}</p>
+
+  <h2>Professional Experience</h2>
+
+  <div class="job-entry">
+    <div class="job-title">Senior Product Manager / IronCircle. <em>AI-driven Cybersecurity Platform</em></div>
+    <div class="job-dates">2025 – PRESENT</div>
+    <p class="job-intro">{{IRONCIRCLE_INTRO}}</p>
+    <ul>
+      {{IRONCIRCLE_BULLETS}}
+    </ul>
+  </div>
+
+  <div class="job-entry">
+    <div class="job-title">Senior Product Manager / Skillfactory. <em>EdTech SaaS Platform · 20K+ MAU</em></div>
+    <div class="job-dates">2021 – 2025</div>
+    <p class="job-intro">{{SKILLFACTORY_INTRO}}</p>
+    <ul>
+      {{SKILLFACTORY_BULLETS}}
+    </ul>
+  </div>
+
+  <div class="job-entry">
+    <div class="job-title">Product Manager / GeekBrains. <em>Payment &amp; Operations Infrastructure · 100K users</em></div>
+    <div class="job-dates">2019 – 2021</div>
+    <p class="job-intro">{{GEEKBRAINS_INTRO}}</p>
+    <ul>
+      {{GEEKBRAINS_BULLETS}}
+    </ul>
+  </div>
+
+</td>
+</tr>
+</table>
+
+</body>
+</html>

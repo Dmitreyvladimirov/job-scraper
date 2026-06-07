@@ -90,9 +90,9 @@ def run() -> None:
         doc_url = None
         if result.score >= RESUME_DOC_THRESHOLD:
             try:
-                html = resume_generator.generate(job, result, resume)
-                if html:
-                    doc_url = gdocs.create_resume_doc(job.get("company", "Unknown"), html)
+                content = resume_generator.generate(job, result, resume)
+                if content:
+                    doc_url = gdocs.create_resume_doc(job.get("company", "Unknown"), content)
                     logger.info(f"  📄 Doc: {doc_url}")
             except Exception as e:
                 logger.error(f"  Google Doc creation failed: {e}")
