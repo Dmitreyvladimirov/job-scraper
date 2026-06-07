@@ -130,7 +130,7 @@ def _callout(content: str, emoji: str) -> dict:
 def create_entry(job: dict, result, cooldown_match: dict | None = None) -> None:
     """Write a qualified vacancy with full analysis in page body."""
     from ats import ATSResult
-    props = _make_properties(job, "found_by_scraper", "🤖 Найдено")
+    props = _make_properties(job, "Scraped", "Активно")
     company = job.get("company", "")
     title = f"{job['title']} ({company})" if company else job["title"]
 
@@ -172,6 +172,7 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None) -> None:
               {"parent": {"database_id": NOTION_DATABASE_ID},
                "properties": props, "children": children})
         logger.info(f"Notion: ✅ '{title}' score={result.score}")
+
     except Exception as e:
         logger.error(f"Notion: failed '{title}': {e}")
 
