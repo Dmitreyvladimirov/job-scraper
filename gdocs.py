@@ -21,6 +21,9 @@ PLACEHOLDER_KEYS = [
     "GB_INTRO", "GB_B1", "GB_B2", "GB_B3", "GB_B4",
 ]
 
+SKILL_KEYS = {"SKILL_1", "SKILL_2", "SKILL_3", "SKILL_4"}
+EMPTY_MARKER = "​"  # zero-width space — marks unused bullet slots for deletion
+
 
 def _services():
     creds = Credentials(
@@ -36,9 +39,114 @@ def _services():
     return drive, docs
 
 
+def _hide_empty_bullets(docs, doc_id: str):
+    """Make unused bullet slots invisible: font size 1pt, white color."""
+    doc = docs.documents().get(documentId=doc_id).execute()
+    requests = []
+
+    def scan(content):
+        for elem in content:
+            if "paragraph" in elem:
+                text = "".join(
+                    r.get("textRun", {}).get("content", "")
+                    for r in elem["paragraph"]["elements"]
+                ).strip()
+                if text == EMPTY_MARKER:
+                    requests.append({"updateTextStyle": {
+                        "range": {
+                            "startIndex": elem["startIndex"],
+                            "endIndex": elem["endIndex"] - 1,
+                        },
+                        "textStyle": {
+                            "fontSize": {"magnitude": 1, "unit": "PT"},
+                            "foregroundColor": {
+                                "color": {"rgbColor": {"red": 1, "green": 1, "blue": 1}}
+                            },
+                        },
+                        "fields": "fontSize,foregroundColor",
+                    }})
+            elif "table" in elem:
+                for row in elem["table"]["tableRows"]:
+                    for cell in row["tableCells"]:
+                        scan(cell["content"])
+
+    scan(doc["body"]["content"])
+
+    if requests:
+        docs.documents().batchUpdate(
+            documentId=doc_id, body={"requests": requests}
+        ).execute()
+        logger.info(f"Hidden {len(requests)} empty bullet lines")
+
+
+def _format_skills(docs, doc_id: str):
+    """
+    For each skill paragraph (Category: skill list), apply:
+    - Category name (up to and including ':'): bold, current size
+    - Skill list (after ':'): normal weight, 8.5pt
+    """
+    doc = docs.documents().get(documentId=doc_id).execute()
+    requests = []
+
+    def scan(content):
+        for elem in content:
+            if "paragraph" in elem:
+                para = elem["paragraph"]
+                full_text = "".join(
+                    r.get("textRun", {}).get("content", "")
+                    for r in para["elements"]
+                )
+                # Skill paragraphs: "Category Name: skill1, skill2, ..."
+                if ":" in full_text and elem["startIndex"] > 0:
+                    colon_offset = full_text.index(":")
+                    para_start = elem["startIndex"]
+                    colon_abs = para_start + colon_offset
+
+                    # Bold the category name (inclusive of colon)
+                    requests.append({"updateTextStyle": {
+                        "range": {
+                            "startIndex": para_start,
+                            "endIndex": colon_abs + 1,
+                        },
+                        "textStyle": {"bold": True},
+                        "fields": "bold",
+                    }})
+
+                    # Normal weight + 8.5pt for the skill list
+                    list_end = elem["endIndex"] - 1  # exclude newline
+                    if colon_abs + 1 < list_end:
+                        requests.append({"updateTextStyle": {
+                            "range": {
+                                "startIndex": colon_abs + 1,
+                                "endIndex": list_end,
+                            },
+                            "textStyle": {
+                                "bold": False,
+                                "fontSize": {"magnitude": 8.5, "unit": "PT"},
+                            },
+                            "fields": "bold,fontSize",
+                        }})
+
+            elif "table" in elem:
+                for row in elem["table"]["tableRows"]:
+                    for cell_idx, cell in enumerate(row["tableCells"]):
+                        if cell_idx == 0:  # skills are in left column only
+                            scan(cell["content"])
+
+    scan(doc["body"]["content"])
+
+    if requests:
+        docs.documents().batchUpdate(
+            documentId=doc_id,
+            body={"requests": requests},
+        ).execute()
+        logger.info(f"Skills formatting applied: {len(requests)} style requests")
+
+
 def create_resume_doc(company: str, content: dict) -> str:
     """
     Copy the resume template and fill in adapted content via replaceAllText.
+    Then applies skills formatting and removes unused bullet slots.
     content: dict returned by resume_generator.generate()
     Returns the edit URL.
     """
@@ -57,26 +165,30 @@ def create_resume_doc(company: str, content: dict) -> str:
     doc_url = copy["webViewLink"]
     logger.info(f"Doc copied from template: {file_name} id={doc_id}")
 
-    # Build replaceAllText requests — skip empty strings (unused bullet slots)
+    # Replace all placeholders
     requests = []
     for key in PLACEHOLDER_KEYS:
-        value = content.get(key, "").strip()
-        if value:
-            requests.append({"replaceAllText": {
-                "containsText": {"text": f"{{{{{key}}}}}", "matchCase": True},
-                "replaceText": value,
-            }})
-        else:
-            # Remove placeholder entirely (bullet slot not used)
-            requests.append({"replaceAllText": {
-                "containsText": {"text": f"{{{{{key}}}}}", "matchCase": True},
-                "replaceText": "—",  # dash so bullet line isn't blank
-            }})
+        value = (content.get(key) or "").strip()
+        requests.append({"replaceAllText": {
+            "containsText": {"text": f"{{{{{key}}}}}", "matchCase": True},
+            "replaceText": value if value else EMPTY_MARKER,
+        }})
 
     docs.documents().batchUpdate(
         documentId=doc_id,
         body={"requests": requests},
     ).execute()
-
     logger.info(f"Content inserted: {len(requests)} replacements")
+
+    # Post-processing: hide empty bullet lines, fix skills formatting
+    try:
+        _hide_empty_bullets(docs, doc_id)
+    except Exception as e:
+        logger.warning(f"Empty bullet hide failed (non-critical): {e}")
+
+    try:
+        _format_skills(docs, doc_id)
+    except Exception as e:
+        logger.warning(f"Skills formatting failed (non-critical): {e}")
+
     return doc_url

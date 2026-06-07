@@ -45,8 +45,13 @@ Rules:
 3. Pick the matching ABOUT ME variant tagged with that domain. Mention {job['company']} or its domain in 1 sentence.
 4. Pick the matching SKILLS block tagged with that domain (all 4 lines, keep the "Tools:" line unchanged)
 5. Pick the best intro sentence for each company that fits this domain
-6. Pick bullets from the base resume: choose ones whose tags match the job domain and that cover the matched keywords. Aim for 4-5 bullets per company — enough to fill 1 page. Use ONLY existing bullet text, do not invent or combine.
-7. Skeptic check — for every bullet and intro sentence: if it contains a vague buzzword without a specific number ({', '.join(SKEPTIC_BUZZWORDS[:6])}...), rewrite it with a concrete number or swap for a different bullet that already has one.
+6. Pick bullets from the base resume: choose ones whose tags match the job domain and that cover the matched keywords. Use ONLY existing bullet text, do not invent or combine.
+   - IC: always fill IC_B1–IC_B4. Add IC_B5 only if there's a genuinely relevant bullet not yet used.
+   - SF: always fill SF_B1–SF_B5. Add SF_B6 only if there's a genuinely relevant bullet not yet used.
+   - GB: always fill GB_B1–GB_B3. Add GB_B4 only if there's a genuinely relevant bullet not yet used.
+   - Leave optional slots empty ("") if there's nothing meaningful to add — don't pad with weak content.
+7. Word limits (to keep 1 page): About Me ≤ 55 words. Each intro ≤ 20 words. Each bullet ≤ 25 words — trim from the end if the source bullet is longer.
+8. Skeptic check — for every bullet and intro sentence: if it contains a vague buzzword without a specific number ({', '.join(SKEPTIC_BUZZWORDS[:6])}...), rewrite it with a concrete number or swap for a different bullet that already has one.
 
 Return ONLY valid JSON, no markdown, no explanation:
 {{
