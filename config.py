@@ -11,12 +11,13 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 def validate_secrets() -> None:
     """Call once at startup to fail fast on missing secrets."""
-    missing = [k for k in ("NOTION_TOKEN", "OPENAI_API_KEY", "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID")
+    missing = [k for k in ("NOTION_TOKEN", "OPENAI_API_KEY", "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "GOOGLE_SERVICE_ACCOUNT_JSON")
                if not os.environ.get(k)]
     if missing:
         raise EnvironmentError(f"Missing required env vars: {', '.join(missing)}")
 
 ATS_THRESHOLD = 60
+RESUME_DOC_THRESHOLD = 70   # generate Google Doc draft only for score >= this
 COMPANY_COOLDOWN_DAYS = 90  # warn if applied to same company within this period
 MAX_GPT_CALLS_PER_RUN = 40  # cap LLM calls per run to control costs
 

@@ -127,7 +127,7 @@ def _callout(content: str, emoji: str) -> dict:
     }
 
 
-def create_entry(job: dict, result, cooldown_match: dict | None = None) -> None:
+def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url: str | None = None) -> None:
     """Write a qualified vacancy with full analysis in page body."""
     from ats import ATSResult
     props = _make_properties(job, "Scraped", "Активно")
@@ -152,6 +152,19 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None) -> None:
             f"{cooldown_match['days_ago']} дней назад — {cooldown_match['position']}",
             "⚠️"
         ))
+
+    if doc_url:
+        children.append({
+            "object": "block", "type": "callout",
+            "callout": {
+                "rich_text": [{"type": "text", "text": {
+                    "content": "📄 Черновик резюме в Google Docs → ",
+                }, "annotations": {}}, {"type": "text", "text": {
+                    "content": doc_url, "link": {"url": doc_url},
+                }}],
+                "icon": {"emoji": "📄"},
+            },
+        })
 
     # Full JD in a toggle
     description = job.get("description", "")

@@ -7,7 +7,9 @@ import ats
 import notion_client
 import telegram
 from sources import himalayas, weworkremotely, remotive, jobicy, remoteok
-from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
+from config import ATS_THRESHOLD, RESUME_DOC_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
+import resume_generator
+import gdocs
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,10 +86,26 @@ def run() -> None:
         if cooldown_match:
             logger.info(f"  ⚠️  Cooldown: {cooldown_match['company']} {cooldown_match['days_ago']}d ago")
 
-        notion_client.create_entry(job, result, cooldown_match=cooldown_match)
+        # Generate Google Doc draft for high-scoring vacancies
+        doc_url = None
+        if result.score >= RESUME_DOC_THRESHOLD:
+            try:
+                html = resume_generator.generate(job, result, resume)
+                if html:
+                    doc_url = gdocs.create_resume_doc(job.get("company", "Unknown"), html)
+                    logger.info(f"  📄 Doc: {doc_url}")
+            except Exception as e:
+                logger.error(f"  Google Doc creation failed: {e}")
+
+        notion_client.create_entry(job, result, cooldown_match=cooldown_match, doc_url=doc_url)
         seen_urls.add(job["url"])
         counts["qualified"] += 1
-        top_jobs.append({"title": job["title"], "company": job["company"], "score": result.score})
+        top_jobs.append({
+            "title": job["title"],
+            "company": job["company"],
+            "score": result.score,
+            "doc_url": doc_url,
+        })
 
     top_jobs.sort(key=lambda x: x["score"], reverse=True)
     telegram.send_run_summary(counts, top_jobs)
