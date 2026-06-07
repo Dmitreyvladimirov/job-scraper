@@ -48,7 +48,7 @@ Rules:
 6. Pick bullets from the base resume: choose ones whose tags match the job domain and that cover the matched keywords. Use ONLY existing bullet text, do not invent or combine.
    - IC: always fill IC_B1–IC_B4. Add IC_B5 only if there's a genuinely relevant bullet not yet used.
    - SF: always fill SF_B1–SF_B5. Add SF_B6 only if there's a genuinely relevant bullet not yet used.
-   - GB: always fill GB_B1–GB_B3. Add GB_B4 only if there's a genuinely relevant bullet not yet used.
+   - GB: always fill GB_B1–GB_B4 (4 bullets).
    - Leave optional slots empty ("") if there's nothing meaningful to add — don't pad with weak content.
 7. Word limits (to keep 1 page): About Me ≤ 55 words. Each intro ≤ 20 words. Each bullet ≤ 25 words — trim from the end if the source bullet is longer.
 8. Skeptic check — for every bullet and intro sentence: if it contains a vague buzzword without a specific number ({', '.join(SKEPTIC_BUZZWORDS[:6])}...), rewrite it with a concrete number or swap for a different bullet that already has one.
