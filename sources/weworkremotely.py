@@ -1,6 +1,7 @@
 import logging
 import feedparser
 from datetime import datetime
+from utils import retry
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +17,9 @@ def fetch() -> list[dict]:
 
     for feed_url in RSS_FEEDS:
         try:
-            feed = feedparser.parse(feed_url)
+            feed = retry(lambda url=feed_url: feedparser.parse(url))
         except Exception as e:
-            logger.error(f"WWR RSS parse failed for {feed_url}: {e}")
+            logger.error(f"WWR RSS parse failed after retries for {feed_url}: {e}")
             continue
 
         for entry in feed.entries:

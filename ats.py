@@ -3,6 +3,7 @@ import json
 import logging
 import urllib.request
 from config import OPENAI_API_KEY
+from utils import retry
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,9 @@ Reply with ONLY this JSON, no other text:
     req.add_header("Authorization", f"Bearer {OPENAI_API_KEY}")
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = retry(lambda: json.loads(
+            urllib.request.urlopen(req, timeout=30).read().decode("utf-8")
+        ))
         raw = data["choices"][0]["message"]["content"].strip()
         match = re.search(r'"score"\s*:\s*(\d+)', raw)
         if match:

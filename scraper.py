@@ -5,6 +5,7 @@ from pathlib import Path
 import filters
 import ats
 import notion_client
+import job_cache
 import telegram
 from sources import himalayas, weworkremotely
 from config import ATS_THRESHOLD, validate_secrets
@@ -36,7 +37,9 @@ def run() -> None:
     jobs = himalayas.fetch() + weworkremotely.fetch()
     logger.info(f"Total fetched: {len(jobs)}")
 
-    seen_urls = notion_client.load_seen_urls()
+    # Build seen set: Notion (qualified) + local cache (all processed)
+    processed = job_cache.load()
+    seen_urls = notion_client.load_seen_urls() | set(processed.keys())
 
     counts = {"qualified": 0, "role": 0, "location": 0, "dedup": 0, "score": 0}
 
@@ -60,13 +63,18 @@ def run() -> None:
         logger.info(f"  {job_score:>3}/100  {job['title']} @ {job['company']}  [{job['source']}]")
 
         if job_score < ATS_THRESHOLD:
+            job_cache.record(processed, job, "low_score", job_score)
+            seen_urls.add(job["url"])
             counts["score"] += 1
             continue
 
         notion_client.create_entry(job, job_score)
         telegram.send_vacancy(job, job_score)
+        job_cache.record(processed, job, "qualified", job_score)
         seen_urls.add(job["url"])
         counts["qualified"] += 1
+
+    job_cache.save(processed)
 
     logger.info(
         f"=== Done: {counts['qualified']} qualified | "

@@ -1,6 +1,7 @@
 import logging
 import requests
 from datetime import datetime
+from utils import retry
 
 logger = logging.getLogger(__name__)
 
@@ -9,11 +10,11 @@ URL = "https://himalayas.app/jobs/api"
 
 def fetch(query: str = "product manager", limit: int = 20) -> list[dict]:
     try:
-        resp = requests.get(URL, params={"q": query, "limit": limit}, timeout=15)
+        resp = retry(lambda: requests.get(URL, params={"q": query, "limit": limit}, timeout=15))
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        logger.error(f"Himalayas fetch failed: {e}")
+        logger.error(f"Himalayas fetch failed after retries: {e}")
         return []
 
     jobs = []

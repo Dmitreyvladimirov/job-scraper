@@ -21,6 +21,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Restore processed jobs cache
+        uses: actions/cache@v4
+        with:
+          path: processed.json
+          key: processed-${{ github.run_id }}
+          restore-keys: |
+            processed-
+
       - name: Write resume from secret
         run: echo "$RESUME_MD" > base_resume.md
         env:
