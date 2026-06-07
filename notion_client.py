@@ -60,7 +60,7 @@ def load_company_applications(cooldown_days: int) -> dict[str, dict]:
     cutoff = (date.today() - timedelta(days=cooldown_days)).isoformat()
     pages = _query_all({
         "and": [
-            {"property": "Status2", "select": {"equals": "Applied"}},
+            {"property": "Status2", "select": {"equals": "applied"}},
             {"property": "Date Applied", "date": {"on_or_after": cutoff}},
         ]
     })
