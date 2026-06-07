@@ -17,6 +17,7 @@ def validate_secrets() -> None:
         raise EnvironmentError(f"Missing required env vars: {', '.join(missing)}")
 
 ATS_THRESHOLD = 60
+COMPANY_COOLDOWN_DAYS = 90  # warn if applied to same company within this period
 
 PM_ROLE_KEYWORDS = [
     "product manager",

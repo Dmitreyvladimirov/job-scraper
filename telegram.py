@@ -8,12 +8,21 @@ logger = logging.getLogger(__name__)
 _API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 
-def send_vacancy(job: dict, score: int) -> None:
+def send_vacancy(job: dict, score: int, cooldown_match: dict | None = None) -> None:
     salary = job.get("salary") or "не указана"
     location = job.get("location") or "Remote"
     company = job.get("company") or "—"
 
+    warning = ""
+    if cooldown_match:
+        warning = (
+            f"⚠️ *Уже подавался в эту компанию*\n"
+            f"{cooldown_match['company']} — {cooldown_match['position']}\n"
+            f"📅 {cooldown_match['date']} ({cooldown_match['days_ago']} дней назад)\n\n"
+        )
+
     text = (
+        f"{warning}"
         f"🤖 *Новая вакансия*\n\n"
         f"*{job['title']}* — {company}\n"
         f"📍 {location} | 💰 {salary}\n"
@@ -34,6 +43,6 @@ def send_vacancy(job: dict, score: int) -> None:
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             resp.read()
-        logger.info(f"Telegram: sent '{job['title']}'")
+        logger.info(f"Telegram: sent '{job['title']}'" + (" [COOLDOWN WARNING]" if cooldown_match else ""))
     except Exception as e:
         logger.error(f"Telegram: failed for '{job['title']}': {e}")
