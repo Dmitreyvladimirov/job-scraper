@@ -1,18 +1,12 @@
 import re
+import json
 import logging
-import anthropic
-from config import ANTHROPIC_API_KEY
+import urllib.request
+from config import OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
 
-_client: anthropic.Anthropic | None = None
-
-
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    return _client
+MODEL = "gpt-4o-mini"
 
 
 def score(job: dict, resume_text: str) -> int:
@@ -32,13 +26,21 @@ Analyze: keyword overlap, required skills match, seniority fit, domain relevance
 Reply with ONLY this JSON, no other text:
 {{"score": <integer 0-100>, "recommendation": "APPLY" or "DONT_APPLY"}}"""
 
+    payload = json.dumps({
+        "model": MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 64,
+        "temperature": 0,
+    }).encode("utf-8")
+
+    req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=payload)
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"Bearer {OPENAI_API_KEY}")
+
     try:
-        message = _get_client().messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=64,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = message.content[0].text.strip()
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        raw = data["choices"][0]["message"]["content"].strip()
         match = re.search(r'"score"\s*:\s*(\d+)', raw)
         if match:
             return min(100, max(0, int(match.group(1))))
