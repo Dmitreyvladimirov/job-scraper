@@ -7,7 +7,7 @@ import ats
 import notion_client
 import telegram
 from sources import himalayas, weworkremotely, remotive, jobicy, remoteok
-from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, validate_secrets
+from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,8 +45,9 @@ def run() -> None:
     seen_urls = notion_client.load_seen_urls()
     company_history = notion_client.load_company_applications(COMPANY_COOLDOWN_DAYS)
 
-    counts = {"qualified": 0, "role": 0, "location": 0, "dedup": 0, "score": 0}
-    top_jobs: list[dict] = []  # for Telegram summary
+    counts = {"qualified": 0, "role": 0, "location": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
+    top_jobs: list[dict] = []
+    gpt_calls = 0
 
     for job in jobs:
         if not job.get("url"):
@@ -64,7 +65,12 @@ def run() -> None:
             counts["dedup"] += 1
             continue
 
+        if gpt_calls >= MAX_GPT_CALLS_PER_RUN:
+            counts["gpt_limit"] += 1
+            continue
+
         result = ats.analyze(job, resume)
+        gpt_calls += 1
         logger.info(f"  {result.score:>3}/100  {job['title']} @ {job['company']}  [{job['source']}]")
 
         if result.score < ATS_THRESHOLD:
@@ -87,9 +93,9 @@ def run() -> None:
     telegram.send_run_summary(counts, top_jobs)
 
     logger.info(
-        f"=== Done: {counts['qualified']} qualified | "
+        f"=== Done: {counts['qualified']} qualified | GPT calls: {gpt_calls}/{MAX_GPT_CALLS_PER_RUN} | "
         f"role:{counts['role']} location:{counts['location']} "
-        f"dedup:{counts['dedup']} low_score:{counts['score']} ==="
+        f"dedup:{counts['dedup']} low_score:{counts['score']} gpt_limit:{counts['gpt_limit']} ==="
     )
 
 
