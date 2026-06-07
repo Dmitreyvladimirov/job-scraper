@@ -44,7 +44,7 @@ Rules:
 2. Pick the matching SUBTITLE variant tagged with that domain
 3. Pick the matching ABOUT ME variant tagged with that domain. Mention {job['company']} or its domain in 1 sentence.
 4. Pick the matching SKILLS block tagged with that domain (all 4 lines, keep the "Tools:" line unchanged)
-5. Pick the best intro sentence for each company that fits this domain
+5. ALL THREE INTROS ARE REQUIRED — never leave empty: write IC_INTRO, SF_INTRO, GB_INTRO. Pick the best 1-sentence summary for each company from the base resume that fits this domain.
 6. Pick bullets from the base resume: choose ones whose tags match the job domain and that cover the matched keywords. Use ONLY existing bullet text, do not invent or combine.
    - IC: always fill IC_B1–IC_B4. Add IC_B5 only if there's a genuinely relevant bullet not yet used.
    - SF: always fill SF_B1–SF_B5. Add SF_B6 only if there's a genuinely relevant bullet not yet used.

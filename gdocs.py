@@ -40,7 +40,7 @@ def _services():
 
 
 def _hide_empty_bullets(docs, doc_id: str):
-    """Make unused bullet slots invisible: font size 1pt, white color."""
+    """Make unused bullet slots invisible: 1pt white font + zero paragraph spacing."""
     doc = docs.documents().get(documentId=doc_id).execute()
     requests = []
 
@@ -65,6 +65,18 @@ def _hide_empty_bullets(docs, doc_id: str):
                         },
                         "fields": "fontSize,foregroundColor",
                     }})
+                    # Collapse vertical space so hidden line takes ~0 height
+                    requests.append({"updateParagraphStyle": {
+                        "range": {
+                            "startIndex": elem["startIndex"],
+                            "endIndex": elem["endIndex"],
+                        },
+                        "paragraphStyle": {
+                            "spaceAbove": {"magnitude": 0, "unit": "PT"},
+                            "spaceBelow": {"magnitude": 0, "unit": "PT"},
+                        },
+                        "fields": "spaceAbove,spaceBelow",
+                    }})
             elif "table" in elem:
                 for row in elem["table"]["tableRows"]:
                     for cell in row["tableCells"]:
@@ -76,7 +88,7 @@ def _hide_empty_bullets(docs, doc_id: str):
         docs.documents().batchUpdate(
             documentId=doc_id, body={"requests": requests}
         ).execute()
-        logger.info(f"Hidden {len(requests)} empty bullet lines")
+        logger.info(f"Hidden {len(requests) // 2} empty bullet lines")
 
 
 def _format_skills(docs, doc_id: str):
@@ -112,7 +124,7 @@ def _format_skills(docs, doc_id: str):
                         "fields": "bold",
                     }})
 
-                    # Normal weight + 8.5pt for the skill list
+                    # Normal weight for the skill list (keep template font size)
                     list_end = elem["endIndex"] - 1  # exclude newline
                     if colon_abs + 1 < list_end:
                         requests.append({"updateTextStyle": {
@@ -122,9 +134,8 @@ def _format_skills(docs, doc_id: str):
                             },
                             "textStyle": {
                                 "bold": False,
-                                "fontSize": {"magnitude": 8.5, "unit": "PT"},
                             },
-                            "fields": "bold,fontSize",
+                            "fields": "bold",
                         }})
 
             elif "table" in elem:
@@ -141,6 +152,44 @@ def _format_skills(docs, doc_id: str):
             body={"requests": requests},
         ).execute()
         logger.info(f"Skills formatting applied: {len(requests)} style requests")
+
+
+def _format_about_me(docs, doc_id: str, about_text: str):
+    """Set About Me paragraph to 9.5pt (template placeholder may inherit smaller size)."""
+    if not about_text:
+        return
+    doc = docs.documents().get(documentId=doc_id).execute()
+    search_prefix = about_text.strip()[:30].lower()
+    requests = []
+
+    def scan(content):
+        for elem in content:
+            if "paragraph" in elem:
+                text = "".join(
+                    r.get("textRun", {}).get("content", "")
+                    for r in elem["paragraph"]["elements"]
+                )
+                if search_prefix in text.lower() and elem["endIndex"] > elem["startIndex"] + 1:
+                    requests.append({"updateTextStyle": {
+                        "range": {
+                            "startIndex": elem["startIndex"],
+                            "endIndex": elem["endIndex"] - 1,
+                        },
+                        "textStyle": {
+                            "fontSize": {"magnitude": 9.5, "unit": "PT"},
+                        },
+                        "fields": "fontSize",
+                    }})
+            elif "table" in elem:
+                for row in elem["table"]["tableRows"]:
+                    for cell_idx, cell in enumerate(row["tableCells"]):
+                        if cell_idx == 1:  # right column only
+                            scan(cell["content"])
+
+    scan(doc["body"]["content"])
+    if requests:
+        docs.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
+        logger.info("About Me font size set to 9.5pt")
 
 
 def create_resume_doc(company: str, content: dict) -> str:
@@ -190,5 +239,10 @@ def create_resume_doc(company: str, content: dict) -> str:
         _format_skills(docs, doc_id)
     except Exception as e:
         logger.warning(f"Skills formatting failed (non-critical): {e}")
+
+    try:
+        _format_about_me(docs, doc_id, content.get("ABOUT_ME", ""))
+    except Exception as e:
+        logger.warning(f"About Me formatting failed (non-critical): {e}")
 
     return doc_url
