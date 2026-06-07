@@ -96,6 +96,12 @@ def run() -> None:
                     logger.info(f"  📄 Doc: {doc_url}")
             except Exception as e:
                 logger.error(f"  Google Doc creation failed: {e}")
+                if "invalid_grant" in str(e).lower() or "token" in str(e).lower():
+                    telegram.send_error(
+                        "Google Docs авторизация истекла.\n"
+                        "Запусти: `python3 get_google_token.py <client_secret.json>`\n"
+                        "Обнови секрет GOOGLE\\_REFRESH\\_TOKEN в GitHub."
+                    )
 
         notion_client.create_entry(job, result, cooldown_match=cooldown_match, doc_url=doc_url)
         seen_urls.add(job["url"])

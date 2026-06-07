@@ -54,3 +54,11 @@ def send_run_summary(counts: dict, top_jobs: list[dict]) -> None:
         logger.info(f"Telegram: summary sent ({qualified} qualified)")
     except Exception as e:
         logger.error(f"Telegram: summary failed: {e}")
+
+
+def send_error(message: str) -> None:
+    """Send a critical error alert (e.g. auth failure)."""
+    try:
+        _send(f"⚠️ *Job Scraper error*\n\n{message}")
+    except Exception as e:
+        logger.error(f"Telegram: error alert failed: {e}")
