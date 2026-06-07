@@ -6,7 +6,7 @@ import filters
 import ats
 import notion_client
 import telegram
-from sources import himalayas, weworkremotely
+from sources import himalayas, weworkremotely, remotive, jobicy, remoteok
 from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, validate_secrets
 
 logging.basicConfig(
@@ -33,7 +33,13 @@ def run() -> None:
     logger.info("=== Job Scraper started ===")
     resume = load_resume()
 
-    jobs = himalayas.fetch() + weworkremotely.fetch()
+    jobs = (
+        himalayas.fetch()
+        + weworkremotely.fetch()
+        + remotive.fetch()
+        + jobicy.fetch()
+        + remoteok.fetch()
+    )
     logger.info(f"Total fetched: {len(jobs)}")
 
     seen_urls = notion_client.load_seen_urls()
