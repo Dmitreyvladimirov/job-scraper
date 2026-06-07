@@ -22,22 +22,42 @@ def _post(url: str, payload: dict, method: str = "POST") -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def already_exists(url: str) -> bool:
-    try:
-        result = _post(
-            f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
-            {
-                "filter": {
-                    "property": "Ссылка на вакансию",
-                    "url": {"equals": url},
-                },
-                "page_size": 1,
-            },
-        )
-        return len(result.get("results", [])) > 0
-    except Exception as e:
-        logger.error(f"Notion dedup check failed: {e}")
-        return False  # fail open so we don't silently drop jobs
+def load_seen_urls() -> set[str]:
+    """One bulk request (paginated) at run start — returns all job URLs already in Notion."""
+    seen: set[str] = set()
+    cursor = None
+    pages_fetched = 0
+
+    while True:
+        payload: dict = {"page_size": 100}
+        if cursor:
+            payload["start_cursor"] = cursor
+
+        try:
+            result = _post(
+                f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
+                payload,
+            )
+        except Exception as e:
+            logger.error(f"Notion bulk fetch failed (page {pages_fetched}): {e}")
+            break
+
+        for page_obj in result.get("results", []):
+            url = (
+                page_obj.get("properties", {})
+                .get("Ссылка на вакансию", {})
+                .get("url") or ""
+            )
+            if url:
+                seen.add(url)
+
+        pages_fetched += 1
+        if not result.get("has_more"):
+            break
+        cursor = result.get("next_cursor")
+
+    logger.info(f"Notion: loaded {len(seen)} known URLs ({pages_fetched} page(s))")
+    return seen
 
 
 def create_entry(job: dict, score: int) -> str | None:

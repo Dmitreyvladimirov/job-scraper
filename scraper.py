@@ -36,6 +36,8 @@ def run() -> None:
     jobs = himalayas.fetch() + weworkremotely.fetch()
     logger.info(f"Total fetched: {len(jobs)}")
 
+    seen_urls = notion_client.load_seen_urls()
+
     counts = {"qualified": 0, "role": 0, "location": 0, "dedup": 0, "score": 0}
 
     for job in jobs:
@@ -50,7 +52,7 @@ def run() -> None:
             counts["location"] += 1
             continue
 
-        if notion_client.already_exists(job["url"]):
+        if job["url"] in seen_urls:
             counts["dedup"] += 1
             continue
 
@@ -63,6 +65,7 @@ def run() -> None:
 
         notion_client.create_entry(job, job_score)
         telegram.send_vacancy(job, job_score)
+        seen_urls.add(job["url"])
         counts["qualified"] += 1
 
     logger.info(
