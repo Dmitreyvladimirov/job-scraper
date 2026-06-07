@@ -2,6 +2,7 @@ import re
 import json
 import logging
 import urllib.request
+from dataclasses import dataclass
 from config import OPENAI_API_KEY
 from utils import retry
 
@@ -10,8 +11,17 @@ logger = logging.getLogger(__name__)
 MODEL = "gpt-4o-mini"
 
 
-def score(job: dict, resume_text: str) -> int:
-    """Return ATS match score 0–100. Returns 0 on any error."""
+@dataclass
+class ATSResult:
+    score: int
+    why_apply: str
+    why_not: str
+    matched: list[str]
+    missed: list[str]
+
+
+def analyze(job: dict, resume_text: str) -> ATSResult:
+    """Score job against resume and return structured analysis."""
     prompt = f"""You are an ATS analyzer. Compare this job description against the candidate's resume.
 
 JOB TITLE: {job['title']}
@@ -23,14 +33,19 @@ JOB DESCRIPTION:
 CANDIDATE RESUME:
 {resume_text[:3000]}
 
-Analyze: keyword overlap, required skills match, seniority fit, domain relevance.
 Reply with ONLY this JSON, no other text:
-{{"score": <integer 0-100>, "recommendation": "APPLY" or "DONT_APPLY"}}"""
+{{
+  "score": <integer 0-100>,
+  "why_apply": "<one sentence: strongest reason to apply>",
+  "why_not": "<one sentence: biggest gap or risk>",
+  "matched": ["<keyword1>", "<keyword2>", "<keyword3>"],
+  "missed": ["<keyword1>", "<keyword2>"]
+}}"""
 
     payload = json.dumps({
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 64,
+        "max_tokens": 200,
         "temperature": 0,
     }).encode("utf-8")
 
@@ -43,11 +58,14 @@ Reply with ONLY this JSON, no other text:
             urllib.request.urlopen(req, timeout=30).read().decode("utf-8")
         ))
         raw = data["choices"][0]["message"]["content"].strip()
-        match = re.search(r'"score"\s*:\s*(\d+)', raw)
-        if match:
-            return min(100, max(0, int(match.group(1))))
-        logger.warning(f"Could not parse score from: {raw!r}")
-        return 0
+        parsed = json.loads(raw)
+        return ATSResult(
+            score=min(100, max(0, int(parsed.get("score", 0)))),
+            why_apply=parsed.get("why_apply", ""),
+            why_not=parsed.get("why_not", ""),
+            matched=parsed.get("matched", [])[:3],
+            missed=parsed.get("missed", [])[:2],
+        )
     except Exception as e:
-        logger.error(f"ATS scoring failed for '{job['title']}': {e}")
-        return 0
+        logger.error(f"ATS analysis failed for '{job['title']}': {e}")
+        return ATSResult(score=0, why_apply="", why_not="", matched=[], missed=[])

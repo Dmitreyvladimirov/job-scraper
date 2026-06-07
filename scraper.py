@@ -24,7 +24,7 @@ def load_resume() -> str:
         logger.error(f"Resume not found at {RESUME_PATH.resolve()}")
         sys.exit(1)
     text = RESUME_PATH.read_text(encoding="utf-8")
-    logger.info(f"Resume loaded: {len(text)} chars from {RESUME_PATH.name}")
+    logger.info(f"Resume loaded: {len(text)} chars")
     return text
 
 
@@ -36,11 +36,11 @@ def run() -> None:
     jobs = himalayas.fetch() + weworkremotely.fetch()
     logger.info(f"Total fetched: {len(jobs)}")
 
-    # Load state from Notion — single source of truth, no local files
     seen_urls = notion_client.load_seen_urls()
     company_history = notion_client.load_company_applications(COMPANY_COOLDOWN_DAYS)
 
     counts = {"qualified": 0, "role": 0, "location": 0, "dedup": 0, "score": 0}
+    top_jobs: list[dict] = []  # for Telegram summary
 
     for job in jobs:
         if not job.get("url"):
@@ -58,29 +58,31 @@ def run() -> None:
             counts["dedup"] += 1
             continue
 
-        job_score = ats.score(job, resume)
-        logger.info(f"  {job_score:>3}/100  {job['title']} @ {job['company']}  [{job['source']}]")
+        result = ats.analyze(job, resume)
+        logger.info(f"  {result.score:>3}/100  {job['title']} @ {job['company']}  [{job['source']}]")
 
-        if job_score < ATS_THRESHOLD:
-            notion_client.create_rejected_entry(job, job_score)
+        if result.score < ATS_THRESHOLD:
+            notion_client.create_rejected_entry(job, result.score)
             seen_urls.add(job["url"])
             counts["score"] += 1
             continue
 
-        # Check company cooldown (only warns, never blocks)
         company_key = job.get("company", "").lower().strip()
         cooldown_match = company_history.get(company_key)
         if cooldown_match:
-            logger.info(f"  ⚠️  Cooldown: already applied to {cooldown_match['company']} {cooldown_match['days_ago']}d ago")
+            logger.info(f"  ⚠️  Cooldown: {cooldown_match['company']} {cooldown_match['days_ago']}d ago")
 
-        notion_client.create_entry(job, job_score)
-        telegram.send_vacancy(job, job_score, cooldown_match=cooldown_match)
+        notion_client.create_entry(job, result, cooldown_match=cooldown_match)
         seen_urls.add(job["url"])
         counts["qualified"] += 1
+        top_jobs.append({"title": job["title"], "company": job["company"], "score": result.score})
+
+    top_jobs.sort(key=lambda x: x["score"], reverse=True)
+    telegram.send_run_summary(counts, top_jobs)
 
     logger.info(
         f"=== Done: {counts['qualified']} qualified | "
-        f"filtered out — role:{counts['role']} location:{counts['location']} "
+        f"role:{counts['role']} location:{counts['location']} "
         f"dedup:{counts['dedup']} low_score:{counts['score']} ==="
     )
 
