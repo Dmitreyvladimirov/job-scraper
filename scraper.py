@@ -8,6 +8,7 @@ import notion_client
 import telegram
 from sources import himalayas, weworkremotely, remotive, jobicy, remoteok
 from config import ATS_THRESHOLD, RESUME_DOC_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
+from utils import strip_html
 import resume_generator
 import gdocs
 
@@ -35,14 +36,25 @@ def run() -> None:
     logger.info("=== Job Scraper started ===")
     resume = load_resume()
 
-    jobs = (
-        himalayas.fetch()
-        + weworkremotely.fetch()
-        + remotive.fetch()
-        + jobicy.fetch()
-        + remoteok.fetch()
-    )
-    logger.info(f"Total fetched: {len(jobs)}")
+    sources_data = [
+        ("Himalayas",       himalayas.fetch()),
+        ("WeWorkRemotely",  weworkremotely.fetch()),
+        ("Remotive",        remotive.fetch()),
+        ("Jobicy",          jobicy.fetch()),
+        ("RemoteOK",        remoteok.fetch()),
+    ]
+    source_counts = {name: len(batch) for name, batch in sources_data}
+    jobs = [j for _, batch in sources_data for j in batch]
+
+    for job in jobs:
+        if job.get("description"):
+            job["description"] = strip_html(job["description"])
+
+    total_fetched = len(jobs)
+    logger.info(f"Total fetched: {total_fetched} — " + ", ".join(f"{n}:{c}" for n, c in source_counts.items()))
+
+    if total_fetched == 0:
+        telegram.send_error("⚠️ Все job boards вернули 0 вакансий — возможны проблемы со скрапингом")
 
     seen_urls = notion_client.load_seen_urls()
     company_history = notion_client.load_company_applications(COMPANY_COOLDOWN_DAYS)
@@ -76,8 +88,9 @@ def run() -> None:
         logger.info(f"  {result.score:>3}/100  {job['title']} @ {job['company']}  [{job['source']}]")
 
         if result.score < ATS_THRESHOLD:
-            notion_client.create_rejected_entry(job, result.score)
-            seen_urls.add(job["url"])
+            ok = notion_client.create_rejected_entry(job, result.score)
+            if ok:
+                seen_urls.add(job["url"])
             counts["score"] += 1
             continue
 
@@ -103,8 +116,9 @@ def run() -> None:
                         "Обнови секрет GOOGLE\\_REFRESH\\_TOKEN в GitHub."
                     )
 
-        notion_client.create_entry(job, result, cooldown_match=cooldown_match, doc_url=doc_url)
-        seen_urls.add(job["url"])
+        ok = notion_client.create_entry(job, result, cooldown_match=cooldown_match, doc_url=doc_url)
+        if ok:
+            seen_urls.add(job["url"])
         counts["qualified"] += 1
         top_jobs.append({
             "title": job["title"],
@@ -114,7 +128,7 @@ def run() -> None:
         })
 
     top_jobs.sort(key=lambda x: x["score"], reverse=True)
-    telegram.send_run_summary(counts, top_jobs)
+    telegram.send_run_summary(counts, top_jobs, source_counts)
 
     logger.info(
         f"=== Done: {counts['qualified']} qualified | GPT calls: {gpt_calls}/{MAX_GPT_CALLS_PER_RUN} | "

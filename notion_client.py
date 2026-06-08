@@ -127,8 +127,8 @@ def _callout(content: str, emoji: str) -> dict:
     }
 
 
-def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url: str | None = None) -> None:
-    """Write a qualified vacancy with full analysis in page body."""
+def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url: str | None = None) -> bool:
+    """Write a qualified vacancy with full analysis in page body. Returns True on success."""
     from ats import ATSResult
     props = _make_properties(job, "Scraped", "Активно")
     company = job.get("company", "")
@@ -185,13 +185,14 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url:
               {"parent": {"database_id": NOTION_DATABASE_ID},
                "properties": props, "children": children})
         logger.info(f"Notion: ✅ '{title}' score={result.score}")
-
+        return True
     except Exception as e:
         logger.error(f"Notion: failed '{title}': {e}")
+        return False
 
 
-def create_rejected_entry(job: dict, score: int) -> None:
-    """Minimal entry for dedup — no JD, just enough to prevent reprocessing."""
+def create_rejected_entry(job: dict, score: int) -> bool:
+    """Minimal entry for dedup — no JD, just enough to prevent reprocessing. Returns True on success."""
     props = _make_properties(job, "rejected_by_scraper", "🚫 Отклонено")
     company = job.get("company", "")
     title = f"{job['title']} ({company})" if company else job["title"]
@@ -199,5 +200,7 @@ def create_rejected_entry(job: dict, score: int) -> None:
         _post("https://api.notion.com/v1/pages",
               {"parent": {"database_id": NOTION_DATABASE_ID}, "properties": props})
         logger.info(f"Notion: 🚫 rejected '{title}' score={score}")
+        return True
     except Exception as e:
         logger.error(f"Notion: failed rejected '{title}': {e}")
+        return False

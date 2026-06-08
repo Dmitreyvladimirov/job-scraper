@@ -109,8 +109,13 @@ def _format_skills(docs, doc_id: str):
                     for r in para["elements"]
                 )
                 # Skill paragraphs: "Category Name: skill1, skill2, ..."
-                if ":" in full_text and elem["startIndex"] > 0:
-                    colon_offset = full_text.index(":")
+                # Guard: require comma-separated list after colon to avoid bolding
+                # bullet text that happens to contain a colon (e.g. "Launched X: result")
+                colon_pos = full_text.find(":")
+                if (colon_pos > 0
+                        and elem["startIndex"] > 0
+                        and "," in full_text[colon_pos + 1:]):
+                    colon_offset = colon_pos
                     para_start = elem["startIndex"]
                     colon_abs = para_start + colon_offset
 

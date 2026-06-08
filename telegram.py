@@ -22,16 +22,21 @@ def _send(text: str) -> None:
         resp.read()
 
 
-def send_run_summary(counts: dict, top_jobs: list[dict]) -> None:
+def send_run_summary(counts: dict, top_jobs: list[dict], source_counts: dict | None = None) -> None:
     """One message per scraper run — summary only, no per-vacancy spam."""
     qualified = counts["qualified"]
     total = sum(counts.values())
     deduped = counts["dedup"]
     low_score = counts["score"]
 
+    sources_line = ""
+    if source_counts:
+        sources_line = "📡 " + " | ".join(f"{n}: {c}" for n, c in source_counts.items()) + "\n"
+
     if qualified == 0:
         text = (
             f"🤖 Прогон завершён\n"
+            f"{sources_line}"
             f"Новых вакансий не найдено "
             f"(всего: {total}, дубликаты: {deduped}, низкий скор: {low_score})\n"
             f"[Открыть Notion]({NOTION_DB_URL})"
@@ -43,6 +48,7 @@ def send_run_summary(counts: dict, top_jobs: list[dict]) -> None:
 
         text = (
             f"🤖 *Прогон завершён*\n\n"
+            f"{sources_line}"
             f"✅ Новых вакансий: *{qualified}*\n"
             f"📊 Всего проверено: {total} | Дубликаты: {deduped} | Низкий скор: {low_score}\n\n"
             f"{top_lines}"
