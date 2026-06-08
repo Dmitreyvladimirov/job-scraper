@@ -2,8 +2,9 @@ name: Job Scraper
 
 on:
   schedule:
-    # 4x/day Mon–Fri: 9:00, 12:00, 15:00, 18:00 Israel time (UTC+3 in summer)
-    - cron: "0 6,9,12,15 * * 1-5"
+    # 4x/day Mon–Fri: ~9:07, ~12:07, ~15:07, ~18:07 Israel time (UTC+3 in summer)
+    # :07 instead of :00 to avoid GitHub's peak-load slot dropping
+    - cron: "7 6,9,12,15 * * 1-5"
   workflow_dispatch:  # manual trigger for testing
 
 jobs:
