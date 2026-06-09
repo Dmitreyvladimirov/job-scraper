@@ -93,7 +93,7 @@ def load_company_applications(cooldown_days: int) -> dict[str, dict]:
     return history
 
 
-def _make_properties(job: dict, status2: str, status: str) -> dict:
+def _make_properties(job: dict, status2: str, status: str, score: int | None = None) -> dict:
     today = date.today().isoformat()
     company = job.get("company", "")
     title = f"{job['title']} ({company})" if company else job["title"]
@@ -107,6 +107,8 @@ def _make_properties(job: dict, status2: str, status: str) -> dict:
     }
     if company:
         props["Компания"] = {"rich_text": [{"text": {"content": company[:255]}}]}
+    if score is not None:
+        props["ATS Score"] = {"number": score}
     return props
 
 
@@ -130,7 +132,7 @@ def _callout(content: str, emoji: str) -> dict:
 def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url: str | None = None) -> bool:
     """Write a qualified vacancy with full analysis in page body. Returns True on success."""
     from ats import ATSResult
-    props = _make_properties(job, "Scraped", "Активно")
+    props = _make_properties(job, "Scraped", "Активно", score=result.score)
     company = job.get("company", "")
     title = f"{job['title']} ({company})" if company else job["title"]
 
@@ -193,7 +195,7 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url:
 
 def create_rejected_entry(job: dict, score: int) -> bool:
     """Minimal entry for dedup — no JD, just enough to prevent reprocessing. Returns True on success."""
-    props = _make_properties(job, "rejected_by_scraper", "🚫 Отклонено")
+    props = _make_properties(job, "rejected_by_scraper", "🚫 Отклонено", score=score)
     company = job.get("company", "")
     title = f"{job['title']} ({company})" if company else job["title"]
     try:
