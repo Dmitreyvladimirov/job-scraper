@@ -7,10 +7,8 @@ import ats
 import notion_client
 import telegram
 from sources import himalayas, weworkremotely, remotive, jobicy, remoteok
-from config import ATS_THRESHOLD, RESUME_DOC_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
+from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
 from utils import strip_html
-import resume_generator
-import gdocs
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,24 +97,7 @@ def run() -> None:
         if cooldown_match:
             logger.info(f"  ⚠️  Cooldown: {cooldown_match['company']} {cooldown_match['days_ago']}d ago")
 
-        # Generate Google Doc draft for high-scoring vacancies
-        doc_url = None
-        if result.score >= RESUME_DOC_THRESHOLD:
-            try:
-                content = resume_generator.generate(job, result, resume)
-                if content:
-                    doc_url = gdocs.create_resume_doc(job.get("company", "Unknown"), content)
-                    logger.info(f"  📄 Doc: {doc_url}")
-            except Exception as e:
-                logger.error(f"  Google Doc creation failed: {e}")
-                if "invalid_grant" in str(e).lower() or "token" in str(e).lower():
-                    telegram.send_error(
-                        "Google Docs авторизация истекла.\n"
-                        "Запусти: `python3 get_google_token.py <client_secret.json>`\n"
-                        "Обнови секрет GOOGLE\\_REFRESH\\_TOKEN в GitHub."
-                    )
-
-        ok = notion_client.create_entry(job, result, cooldown_match=cooldown_match, doc_url=doc_url)
+        ok = notion_client.create_entry(job, result, cooldown_match=cooldown_match)
         if ok:
             seen_urls.add(job["url"])
         counts["qualified"] += 1
@@ -124,7 +105,6 @@ def run() -> None:
             "title": job["title"],
             "company": job["company"],
             "score": result.score,
-            "doc_url": doc_url,
         })
 
     top_jobs.sort(key=lambda x: x["score"], reverse=True)

@@ -1,4 +1,11 @@
-# Job Scraper — Backlog
+# Job Scraper — Backlog & Progress
+
+## Статус деплоя (2026-06-07)
+
+Railway cron: `7 6,9,12,15 * * 1-5` (пн–пт, 4× в день в :07)
+GitHub Actions: только `workflow_dispatch` для ручного запуска
+
+---
 
 ## [READY] Поле ATS Score в Notion DB
 
@@ -45,3 +52,32 @@ props = _make_properties(job, "rejected_by_scraper", "🚫 Отклонено", 
 - Деплоить код только ПОСЛЕ того как поле добавлено в Notion
 - Если поле не существует, Notion вернёт 400 и карточка не создастся совсем
 - Имя поля должно совпадать точно: `ATS Score`
+
+---
+
+## [MANUAL CHECK] После следующей вакансии с высоким ATS
+
+После того как придёт первая хорошая вакансия (score ≥ 70), открыть сгенерированный Google Doc и проверить:
+- Нет пустого пространства между секциями (hidden bullets)
+- Скиллы: категория жирная, список — нормальный размер
+- About Me: размер шрифта ≈ 9.5pt
+- GPT не повторяет одни и те же bullets в разных компаниях
+- Все 3 интро заполнены (IC_INTRO, SF_INTRO, GB_INTRO)
+
+---
+
+## [DONE] Выполненные задачи
+
+- [x] Node.js 24 для GitHub Actions (checkout@v6, setup-python@v6)
+- [x] `_hide_empty_bullets`: добавлен `updateParagraphStyle` spaceAbove/Below=0
+- [x] `_format_skills`: убран fontSize override (был 8.5pt)
+- [x] `_format_skills`: guard — colon + comma (не бить по "Launch X: result")
+- [x] `seen_urls.add` — только после успешного Notion write (notion функции → bool)
+- [x] `About Me` font: добавлена `_format_about_me()` → 9.5pt
+- [x] `strip_html()` в utils.py — чистим HTML из job descriptions
+- [x] Per-source counts + 0-vacancy alert в scraper.py
+- [x] source_counts breakdown в Telegram summary
+- [x] GPT prompt: все 3 интро обязательны (IC/SF/GB)
+- [x] Railway deployment: railway.toml + run.sh
+- [x] GitHub Actions: schedule удалён, только workflow_dispatch
+- [x] Все 8 env vars установлены в Railway CLI
