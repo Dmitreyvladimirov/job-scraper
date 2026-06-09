@@ -141,7 +141,11 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url:
     salary = job.get("salary") or "не указана"
 
     children = [
-        _callout(f"ATS Score: {result.score}/100  |  Зарплата: {salary}  |  {job['source']}", "⭐"),
+        _callout(
+            f"ATS Score: {result.score}/100  |  {result.domain or '—'}  |  Зарплата: {salary}  |  {job['source']}\n"
+            f"Role: {result.role_score}/30  |  Domain: {result.domain_score}/30  |  Keywords: {result.keyword_score}/25  |  Location: {result.location_score}/15",
+            "⭐"
+        ),
         _text_block(f"✅ Стоит рассмотреть: {result.why_apply}") if result.why_apply else _text_block(""),
         _text_block(f"❌ Риски: {result.why_not}") if result.why_not else _text_block(""),
         _text_block(f"🔑 Совпало: {matched_str}"),
