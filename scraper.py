@@ -57,7 +57,7 @@ def run() -> None:
     seen_urls = notion_client.load_seen_urls()
     company_history = notion_client.load_company_applications(COMPANY_COOLDOWN_DAYS)
 
-    counts = {"qualified": 0, "role": 0, "location": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
+    counts = {"qualified": 0, "role": 0, "location": 0, "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
     top_jobs: list[dict] = []
     gpt_calls = 0
 
@@ -71,6 +71,10 @@ def run() -> None:
 
         if not filters.passes_location_filter(job):
             counts["location"] += 1
+            continue
+
+        if not filters.passes_date_filter(job):
+            counts["stale"] += 1
             continue
 
         if job["url"] in seen_urls:
@@ -112,7 +116,7 @@ def run() -> None:
 
     logger.info(
         f"=== Done: {counts['qualified']} qualified | GPT calls: {gpt_calls}/{MAX_GPT_CALLS_PER_RUN} | "
-        f"role:{counts['role']} location:{counts['location']} "
+        f"role:{counts['role']} location:{counts['location']} stale:{counts['stale']} "
         f"dedup:{counts['dedup']} low_score:{counts['score']} gpt_limit:{counts['gpt_limit']} ==="
     )
 

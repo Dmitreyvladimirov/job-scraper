@@ -20,6 +20,7 @@ def validate_secrets() -> None:
 ATS_THRESHOLD = 60
 COMPANY_COOLDOWN_DAYS = 90  # warn if applied to same company within this period
 MAX_GPT_CALLS_PER_RUN = 40  # cap LLM calls per run to control costs
+MAX_JOB_AGE_DAYS = 14       # skip vacancies older than this; 0 = disabled
 
 PM_ROLE_KEYWORDS = [
     "product manager",
