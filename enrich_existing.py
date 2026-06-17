@@ -71,8 +71,13 @@ def main() -> None:
     updated = skipped = failed = 0
     for e in entries:
         company = e["company"]
-        # Title in Notion is "Position (Company)" — extract just position
-        title = e["title"].replace(f" ({company})", "").strip() if company else e["title"]
+        raw_title = e["title"]
+        # If company field is empty, extract it from "Position (Company)" title format
+        if not company and "(" in raw_title and raw_title.endswith(")"):
+            company = raw_title[raw_title.rfind("(") + 1:-1]
+            title = raw_title[:raw_title.rfind("(")].strip()
+        else:
+            title = raw_title.replace(f" ({company})", "").strip() if company else raw_title
 
         direct = find_apply_url(company, title)
         if not direct:
