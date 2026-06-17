@@ -43,6 +43,7 @@ def init_db() -> None:
                 title      TEXT,
                 company    TEXT,
                 source     TEXT,
+                published  TEXT,
                 ats_score  INTEGER,
                 outcome    TEXT,  -- qualified | low_score | role | location | stale | dedup | gpt_limit
                 logged_at  TEXT DEFAULT (datetime('now'))
@@ -52,6 +53,11 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_jobs_outcome ON jobs(outcome);
             CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at);
         """)
+        # migrate existing DB that may lack the published column
+        try:
+            conn.execute("ALTER TABLE jobs ADD COLUMN published TEXT")
+        except sqlite3.OperationalError:
+            pass
     logger.info(f"DB: initialised at {DB_PATH}")
 
 
@@ -100,7 +106,7 @@ def finish_run(run_id: int, counts: dict, gpt_calls: int) -> None:
 def log_job(run_id: int, job: dict, outcome: str, ats_score: int | None = None) -> None:
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO jobs (run_id, url, title, company, source, ats_score, outcome) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO jobs (run_id, url, title, company, source, published, ats_score, outcome) VALUES (?,?,?,?,?,?,?,?)",
             (run_id, job.get("url"), job.get("title"), job.get("company"),
-             job.get("source"), ats_score, outcome),
+             job.get("source"), job.get("published"), ats_score, outcome),
         )
