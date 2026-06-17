@@ -11,7 +11,7 @@ import telegram
 import sheets
 from sources import himalayas, weworkremotely, remotive, jobicy, remoteok, arbeitnow
 from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
-from utils import strip_html, enrich_url, normalize_job_key
+from utils import strip_html, enrich_url, normalize_job_key, fetch_jd_from_url
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,18 +53,33 @@ def run() -> None:
         if job.get("description"):
             job["description"] = strip_html(job["description"])
 
-    # Layer 1: deduplicate within this run by (company, title) — same job from multiple sources
-    seen_in_run: set[tuple[str, str]] = set()
-    deduped: list[dict] = []
-    cross_source_dedup = 0
+    # Layer 1: deduplicate within this run by (company, title).
+    # When duplicates exist, keep the one with the best description:
+    # any source beats RemoteOK (AI summary); among equal-tier sources, longer description wins.
+    from collections import defaultdict
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    no_key: list[dict] = []
     for job in jobs:
         key = normalize_job_key(job.get("company", ""), job.get("title", ""))
-        if key[0] and key[1] and key in seen_in_run:
-            cross_source_dedup += 1
-            logger.debug(f"Cross-source dedup: {job['title']} @ {job['company']} [{job['source']}]")
+        if key[0] and key[1]:
+            groups[key].append(job)
         else:
-            seen_in_run.add(key)
-            deduped.append(job)
+            no_key.append(job)
+
+    cross_source_dedup = 0
+    deduped: list[dict] = list(no_key)
+    for key, group in groups.items():
+        if len(group) == 1:
+            deduped.append(group[0])
+        else:
+            best = max(group, key=lambda j: (
+                0 if j.get("source", "").lower() == "remoteok" else 1,
+                len(j.get("description") or ""),
+            ))
+            cross_source_dedup += len(group) - 1
+            sources = [j["source"] for j in group]
+            logger.info(f"Cross-source dedup: kept {best['source']} for {best['title']} @ {best['company']} (from {sources})")
+            deduped.append(best)
     jobs = deduped
 
     total_fetched = len(jobs)
@@ -122,6 +137,16 @@ def run() -> None:
             continue
 
         enrich_url(job)
+
+        # For RemoteOK jobs: fetch full JD from the direct URL (RemoteOK only stores AI summary)
+        if job.get("source", "").lower() == "remoteok":
+            apply_url = job.get("apply_url") or ""
+            if apply_url and apply_url != job.get("url", ""):
+                full_jd = fetch_jd_from_url(apply_url)
+                if full_jd and len(full_jd) > len(job.get("description") or ""):
+                    job["description"] = full_jd
+                    logger.info(f"  Full JD fetched: {len(full_jd)} chars for {job['title']} @ {job['company']}")
+
         result = ats.analyze(job, resume)
         gpt_calls += 1
         logger.info(f"  {result.score:>3}/100  {job['title']} @ {job['company']}  [{job['source']}]")

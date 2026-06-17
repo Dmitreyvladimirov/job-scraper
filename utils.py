@@ -2,6 +2,7 @@ import re
 import time
 import logging
 import requests
+from html import unescape
 from html.parser import HTMLParser
 
 logger = logging.getLogger(__name__)
@@ -142,6 +143,57 @@ def find_apply_url(company: str, title: str) -> str | None:
             pass
 
     return None
+
+
+def fetch_jd_from_url(url: str) -> str:
+    """Fetch full job description from a direct Greenhouse / Lever / Ashby URL."""
+    if not url:
+        return ""
+    try:
+        if "jobs.lever.co" in url:
+            parts = url.rstrip("/").split("/")
+            company, uuid = parts[-2], parts[-1]
+            r = requests.get(f"https://api.lever.co/v0/postings/{company}/{uuid}", timeout=8)
+            if r.status_code == 200:
+                data = r.json()
+                return strip_html(data.get("descriptionPlain") or data.get("description") or "")
+
+        elif "boards.greenhouse.io" in url or "boards-api.greenhouse.io" in url:
+            parts = url.rstrip("/").split("/")
+            job_id, company = parts[-1], parts[-3]
+            r = requests.get(
+                f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs/{job_id}",
+                timeout=8,
+            )
+            if r.status_code == 200:
+                # Greenhouse returns HTML-entity-encoded content — unescape before stripping tags
+                return strip_html(unescape(r.json().get("content") or ""))
+
+        elif "jobs.ashbyhq.com" in url:
+            parts = url.rstrip("/").split("/")
+            company, job_id = parts[-2], parts[-1]
+            r = requests.post(
+                "https://api.ashbyhq.com/posting-api/graphql",
+                json={
+                    "operationName": "ApiJobPosting",
+                    "query": (
+                        "query ApiJobPosting($organizationHostedJobsPageName: String!, $jobPostingId: String!) {"
+                        "  jobPosting(organizationHostedJobsPageName: $organizationHostedJobsPageName,"
+                        "             jobPostingId: $jobPostingId) {"
+                        "    descriptionSections { descriptionHtml } } }"
+                    ),
+                    "variables": {"organizationHostedJobsPageName": company, "jobPostingId": job_id},
+                },
+                timeout=8,
+            )
+            if r.status_code == 200:
+                sections = (
+                    r.json().get("data", {}).get("jobPosting", {}).get("descriptionSections") or []
+                )
+                return strip_html(" ".join(s.get("descriptionHtml", "") for s in sections))
+    except Exception as e:
+        logger.debug(f"fetch_jd_from_url failed for {url}: {e}")
+    return ""
 
 
 def enrich_url(job: dict) -> None:
