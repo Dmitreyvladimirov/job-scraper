@@ -7,7 +7,7 @@ import ats
 import db
 import notion_client
 import telegram
-from sources import himalayas, weworkremotely, remotive, jobicy, remoteok
+from sources import himalayas, weworkremotely, remotive, jobicy, remoteok, arbeitnow
 from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
 from utils import strip_html
 
@@ -42,6 +42,7 @@ def run() -> None:
         ("Remotive",        remotive.fetch()),
         ("Jobicy",          jobicy.fetch()),
         ("RemoteOK",        remoteok.fetch()),
+        ("Arbeitnow",       arbeitnow.fetch()),
     ]
     source_counts = {name: len(batch) for name, batch in sources_data}
     jobs = [j for _, batch in sources_data for j in batch]
