@@ -172,6 +172,13 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url:
         _text_block(f"🎯 Не хватает: {missed_str}"),
     ]
 
+    if job.get("incomplete_description"):
+        children.append(_callout(
+            "Описание взято из RemoteOK (краткое AI-саммари) — прямая ссылка не найдена. "
+            "Оценка ATS может быть неточной. Проверь вакансию вручную перед откликом.",
+            "⚠️"
+        ))
+
     if cooldown_match:
         children.append(_callout(
             f"⚠️ Cooldown: уже подавался в {cooldown_match['company']} "

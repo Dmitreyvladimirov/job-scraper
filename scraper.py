@@ -141,11 +141,16 @@ def run() -> None:
         # For RemoteOK jobs: fetch full JD from the direct URL (RemoteOK only stores AI summary)
         if job.get("source", "").lower() == "remoteok":
             apply_url = job.get("apply_url") or ""
+            jd_enriched = False
             if apply_url and apply_url != job.get("url", ""):
                 full_jd = fetch_jd_from_url(apply_url)
                 if full_jd and len(full_jd) > len(job.get("description") or ""):
                     job["description"] = full_jd
+                    jd_enriched = True
                     logger.info(f"  Full JD fetched: {len(full_jd)} chars for {job['title']} @ {job['company']}")
+            if not jd_enriched:
+                job["incomplete_description"] = True
+                logger.info(f"  ⚠️ No direct URL — scoring {job['title']} @ {job['company']} from RemoteOK summary")
 
         result = ats.analyze(job, resume)
         gpt_calls += 1
