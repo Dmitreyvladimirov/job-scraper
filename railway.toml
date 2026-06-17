@@ -1,3 +1,2 @@
 [deploy]
 startCommand = "bash run.sh"
-cronSchedule = "7 6,9,12,15 * * 1-5"
