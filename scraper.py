@@ -11,7 +11,7 @@ import telegram
 import sheets
 from sources import himalayas, weworkremotely, remotive, jobicy, remoteok, arbeitnow
 from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
-from utils import strip_html, enrich_url
+from utils import strip_html, enrich_url, normalize_job_key
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,13 +53,30 @@ def run() -> None:
         if job.get("description"):
             job["description"] = strip_html(job["description"])
 
+    # Layer 1: deduplicate within this run by (company, title) — same job from multiple sources
+    seen_in_run: set[tuple[str, str]] = set()
+    deduped: list[dict] = []
+    cross_source_dedup = 0
+    for job in jobs:
+        key = normalize_job_key(job.get("company", ""), job.get("title", ""))
+        if key[0] and key[1] and key in seen_in_run:
+            cross_source_dedup += 1
+            logger.debug(f"Cross-source dedup: {job['title']} @ {job['company']} [{job['source']}]")
+        else:
+            seen_in_run.add(key)
+            deduped.append(job)
+    jobs = deduped
+
     total_fetched = len(jobs)
-    logger.info(f"Total fetched: {total_fetched} — " + ", ".join(f"{n}:{c}" for n, c in source_counts.items()))
+    logger.info(
+        f"Total fetched: {total_fetched} ({cross_source_dedup} cross-source dupes removed) — "
+        + ", ".join(f"{n}:{c}" for n, c in source_counts.items())
+    )
 
     if total_fetched == 0:
         telegram.send_error("⚠️ Все job boards вернули 0 вакансий — возможны проблемы со скрапингом")
 
-    seen_urls = notion_client.load_seen_urls()
+    seen_urls, seen_keys = notion_client.load_seen_urls()
     company_history = notion_client.load_company_applications(COMPANY_COOLDOWN_DAYS)
 
     counts = {"qualified": 0, "role": 0, "location": 0, "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
@@ -92,6 +109,13 @@ def run() -> None:
             db.log_job(run_id, job, "dedup")
             continue
 
+        # Layer 2: cross-run dedup by (company, title) — catches same job with different URL
+        job_key = normalize_job_key(job.get("company", ""), job.get("title", ""))
+        if job_key[0] and job_key[1] and job_key in seen_keys:
+            counts["dedup"] += 1
+            db.log_job(run_id, job, "dedup")
+            continue
+
         if gpt_calls >= MAX_GPT_CALLS_PER_RUN:
             counts["gpt_limit"] += 1
             db.log_job(run_id, job, "gpt_limit")
@@ -106,6 +130,7 @@ def run() -> None:
             ok = notion_client.create_rejected_entry(job, result.score)
             if ok:
                 seen_urls.add(job["url"])
+                seen_keys.add(job_key)
             counts["score"] += 1
             db.log_job(run_id, job, "low_score", ats_score=result.score)
             continue
@@ -118,6 +143,7 @@ def run() -> None:
         ok = notion_client.create_entry(job, result, cooldown_match=cooldown_match)
         if ok:
             seen_urls.add(job["url"])
+            seen_keys.add(job_key)
         counts["qualified"] += 1
         db.log_job(run_id, job, "qualified", ats_score=result.score)
         top_jobs.append({

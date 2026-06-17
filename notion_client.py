@@ -3,6 +3,7 @@ import logging
 import urllib.request
 from datetime import date, timedelta
 from config import NOTION_TOKEN, NOTION_DATABASE_ID
+from utils import normalize_job_key
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +46,33 @@ def _query_all(filter_payload: dict | None = None) -> list[dict]:
     return results
 
 
-def load_seen_urls() -> set[str]:
+def load_seen_urls() -> tuple[set[str], set[tuple[str, str]]]:
     pages = _query_all()
-    seen = set()
+    seen_urls: set[str] = set()
+    seen_keys: set[tuple[str, str]] = set()
     for p in pages:
-        url = p.get("properties", {}).get("Ссылка на вакансию", {}).get("url") or ""
+        props = p.get("properties", {})
+
+        url = props.get("Ссылка на вакансию", {}).get("url") or ""
         if url:
-            seen.add(url)
-    logger.info(f"Notion: loaded {len(seen)} known URLs")
-    return seen
+            seen_urls.add(url)
+
+        comp_parts = props.get("Компания", {}).get("rich_text", [])
+        company = comp_parts[0].get("plain_text", "") if comp_parts else ""
+
+        title_parts = props.get("Позиция", {}).get("title", [])
+        raw_title = title_parts[0].get("plain_text", "") if title_parts else ""
+
+        # Fallback: extract company from "Position (Company)" title format
+        if not company and "(" in raw_title and raw_title.endswith(")"):
+            company = raw_title[raw_title.rfind("(") + 1:-1]
+            raw_title = raw_title[:raw_title.rfind("(")].strip()
+
+        if company and raw_title:
+            seen_keys.add(normalize_job_key(company, raw_title))
+
+    logger.info(f"Notion: loaded {len(seen_urls)} known URLs, {len(seen_keys)} known job keys")
+    return seen_urls, seen_keys
 
 
 def load_company_applications(cooldown_days: int) -> dict[str, dict]:

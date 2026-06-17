@@ -34,6 +34,20 @@ def strip_html(text: str) -> str:
 
 _PLATFORM_HOSTS = ("remoteok.com", "arbeitnow.com", "weworkremotely.com")
 
+_COMPANY_SUFFIXES = re.compile(
+    r"\b(inc|ltd|llc|gmbh|sas|bv|ag|corp|co|oy|ab|as|sa|plc|pte|pty|srl|sl)\b\.?",
+    re.IGNORECASE,
+)
+
+
+def normalize_job_key(company: str, title: str) -> tuple[str, str]:
+    """Normalize (company, title) for cross-source deduplication."""
+    def _norm(text: str) -> str:
+        text = _COMPANY_SUFFIXES.sub("", text.lower())
+        return re.sub(r"[^a-z0-9 ]", " ", text).split()
+
+    return (" ".join(_norm(company)), " ".join(_norm(title)))
+
 
 def _slugify(company: str) -> list[str]:
     base = company.lower().strip()
