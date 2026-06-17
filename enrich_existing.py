@@ -16,7 +16,7 @@ HEADERS = {
     "Notion-Version": "2022-06-28",
     "Content-Type": "application/json",
 }
-PLATFORM_HOSTS = ("remoteok.com", "arbeitnow.com")
+PLATFORM_HOSTS = ("remoteok.com", "arbeitnow.com", "weworkremotely.com")
 
 
 def _request(url: str, payload: dict, method: str = "POST") -> dict:
@@ -64,20 +64,9 @@ def update_url(page_id: str, new_url: str) -> None:
     )
 
 
-AFTER_JUN7_IDS = {
-    "3807a85b-5b20-8152-8b42-c40133ba74cc",  # PadSplit      Jun 15
-    "3827a85b-5b20-81ef-900f-f41f5597e0d7",  # Distru        Jun 17
-    "37a7a85b-5b20-8111-9027-f45129c10d3c",  # Worth AI      Jun 9
-    "3787a85b-5b20-81dc-8d48-f312a2ed9b94",  # PancakeSwap   Jun 9
-    "3787a85b-5b20-8120-be3c-d033f4aeffce",  # Conduit       Jun 9
-    "3787a85b-5b20-81d3-ab4d-f605ff2d4196",  # Accurate Bg   Jun 9
-}
-
-
 def main() -> None:
     entries = fetch_platform_entries()
-    entries = [e for e in entries if e["page_id"] in AFTER_JUN7_IDS]
-    logger.info(f"Found {len(entries)} post-Jun-7 entries with platform URLs")
+    logger.info(f"Found {len(entries)} entries with platform URLs")
 
     updated = skipped = failed = 0
     for e in entries:
