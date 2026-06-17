@@ -94,7 +94,7 @@ def run() -> None:
     seen_urls, seen_keys = notion_client.load_seen_urls()
     company_history = notion_client.load_company_applications(COMPANY_COOLDOWN_DAYS)
 
-    counts = {"qualified": 0, "role": 0, "location": 0, "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
+    counts = {"qualified": 0, "role": 0, "location": 0, "language": 0, "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
     top_jobs: list[dict] = []
     gpt_calls = 0
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
@@ -107,6 +107,11 @@ def run() -> None:
         if not filters.passes_role_filter(job):
             counts["role"] += 1
             db.log_job(run_id, job, "role")
+            continue
+
+        if not filters.passes_language_filter(job):
+            counts["language"] += 1
+            db.log_job(run_id, job, "language")
             continue
 
         if not filters.passes_location_filter(job):
@@ -189,8 +194,8 @@ def run() -> None:
 
     logger.info(
         f"=== Done: {counts['qualified']} qualified | GPT calls: {gpt_calls}/{MAX_GPT_CALLS_PER_RUN} | "
-        f"role:{counts['role']} location:{counts['location']} stale:{counts['stale']} "
-        f"dedup:{counts['dedup']} low_score:{counts['score']} gpt_limit:{counts['gpt_limit']} ==="
+        f"role:{counts['role']} language:{counts['language']} location:{counts['location']} "
+        f"stale:{counts['stale']} dedup:{counts['dedup']} low_score:{counts['score']} gpt_limit:{counts['gpt_limit']} ==="
     )
 
 
