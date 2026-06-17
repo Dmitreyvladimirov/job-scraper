@@ -32,7 +32,7 @@ def strip_html(text: str) -> str:
     return re.sub(r"\s+", " ", result).strip()
 
 
-_PLATFORM_HOSTS = ("remoteok.com", "arbeitnow.com")
+_PLATFORM_HOSTS = ("remoteok.com", "arbeitnow.com", "weworkremotely.com")
 
 
 def _slugify(company: str) -> list[str]:
@@ -53,19 +53,35 @@ def _title_match(a: str, b: str) -> bool:
     return sum(1 for w in words if w in b.lower()) >= min(2, len(words))
 
 
+def _company_match(query: str, candidate: str) -> bool:
+    """True if candidate company name is close enough to query (prevents e.g. 'Insider' → 'Business Insider')."""
+    q = re.sub(r"[^a-z0-9 ]", "", query.lower()).split()
+    c = re.sub(r"[^a-z0-9 ]", "", candidate.lower()).split()
+    if not q or not c:
+        return False
+    shared = sum(1 for w in q if w in c)
+    # All query words must appear in candidate; extra words allowed ≤ half of query length
+    return shared == len(q) and (len(c) - shared) <= max(0, len(q) // 2)
+
+
 def find_apply_url(company: str, title: str) -> str | None:
     """Try Greenhouse → Lever → Ashby to get a direct apply URL."""
     for slug in _slugify(company):
         # Greenhouse
         try:
-            r = requests.get(
-                f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
+            meta = requests.get(
+                f"https://boards-api.greenhouse.io/v1/boards/{slug}",
                 timeout=5,
             )
-            if r.status_code == 200:
-                for j in r.json().get("jobs", []):
-                    if _title_match(title, j.get("title", "")):
-                        return j.get("absolute_url")
+            if meta.status_code == 200 and _company_match(company, meta.json().get("name", "")):
+                r = requests.get(
+                    f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
+                    timeout=5,
+                )
+                if r.status_code == 200:
+                    for j in r.json().get("jobs", []):
+                        if _title_match(title, j.get("title", "")):
+                            return j.get("absolute_url")
         except Exception:
             pass
 
