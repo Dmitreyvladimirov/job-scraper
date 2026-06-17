@@ -1,5 +1,6 @@
 import sys
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 import filters
@@ -7,6 +8,7 @@ import ats
 import db
 import notion_client
 import telegram
+import sheets
 from sources import himalayas, weworkremotely, remotive, jobicy, remoteok, arbeitnow
 from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
 from utils import strip_html, enrich_url
@@ -63,6 +65,7 @@ def run() -> None:
     counts = {"qualified": 0, "role": 0, "location": 0, "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
     top_jobs: list[dict] = []
     gpt_calls = 0
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     run_id = db.start_run(total_fetched, source_counts)
 
     for job in jobs:
@@ -125,6 +128,7 @@ def run() -> None:
 
     top_jobs.sort(key=lambda x: x["score"], reverse=True)
     db.finish_run(run_id, counts, gpt_calls)
+    sheets.log_run(counts, gpt_calls, source_counts, started_at=started_at)
     telegram.send_run_summary(counts, top_jobs, source_counts)
 
     logger.info(
