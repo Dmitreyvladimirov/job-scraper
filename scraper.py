@@ -4,6 +4,7 @@ from pathlib import Path
 
 import filters
 import ats
+import db
 import notion_client
 import telegram
 from sources import himalayas, weworkremotely, remotive, jobicy, remoteok
@@ -31,6 +32,7 @@ def load_resume() -> str:
 
 def run() -> None:
     validate_secrets()
+    db.init_db()
     logger.info("=== Job Scraper started ===")
     resume = load_resume()
 
@@ -60,6 +62,7 @@ def run() -> None:
     counts = {"qualified": 0, "role": 0, "location": 0, "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
     top_jobs: list[dict] = []
     gpt_calls = 0
+    run_id = db.start_run(total_fetched, source_counts)
 
     for job in jobs:
         if not job.get("url"):
@@ -67,22 +70,27 @@ def run() -> None:
 
         if not filters.passes_role_filter(job):
             counts["role"] += 1
+            db.log_job(run_id, job, "role")
             continue
 
         if not filters.passes_location_filter(job):
             counts["location"] += 1
+            db.log_job(run_id, job, "location")
             continue
 
         if not filters.passes_date_filter(job):
             counts["stale"] += 1
+            db.log_job(run_id, job, "stale")
             continue
 
         if job["url"] in seen_urls:
             counts["dedup"] += 1
+            db.log_job(run_id, job, "dedup")
             continue
 
         if gpt_calls >= MAX_GPT_CALLS_PER_RUN:
             counts["gpt_limit"] += 1
+            db.log_job(run_id, job, "gpt_limit")
             continue
 
         result = ats.analyze(job, resume)
@@ -94,6 +102,7 @@ def run() -> None:
             if ok:
                 seen_urls.add(job["url"])
             counts["score"] += 1
+            db.log_job(run_id, job, "low_score", ats_score=result.score)
             continue
 
         company_key = job.get("company", "").lower().strip()
@@ -105,6 +114,7 @@ def run() -> None:
         if ok:
             seen_urls.add(job["url"])
         counts["qualified"] += 1
+        db.log_job(run_id, job, "qualified", ats_score=result.score)
         top_jobs.append({
             "title": job["title"],
             "company": job["company"],
@@ -112,6 +122,7 @@ def run() -> None:
         })
 
     top_jobs.sort(key=lambda x: x["score"], reverse=True)
+    db.finish_run(run_id, counts, gpt_calls)
     telegram.send_run_summary(counts, top_jobs, source_counts)
 
     logger.info(
