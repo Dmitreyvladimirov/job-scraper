@@ -116,7 +116,7 @@ def find_apply_url(company: str, title: str) -> str | None:
 
 def enrich_url(job: dict) -> None:
     """If job URL is a job-platform page, try to find the company's direct apply URL."""
-    if not any(h in job.get("url", "") for h in _PLATFORM_HOSTS):
+    if not any(h in job.get("url", "").lower() for h in _PLATFORM_HOSTS):
         return
     direct = find_apply_url(job.get("company", ""), job.get("title", ""))
     if direct:
