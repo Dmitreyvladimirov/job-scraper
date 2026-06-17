@@ -99,7 +99,7 @@ def _make_properties(job: dict, status2: str, status: str, score: int | None = N
     title = f"{job['title']} ({company})" if company else job["title"]
     props = {
         "Позиция": {"title": [{"text": {"content": title[:255]}}]},
-        "Ссылка на вакансию": {"url": job["url"]},
+        "Ссылка на вакансию": {"url": job.get("apply_url") or job["url"]},
         "Status2": {"select": {"name": status2}},
         "Статус": {"select": {"name": status}},
         "Date Applied": {"date": {"start": today}},

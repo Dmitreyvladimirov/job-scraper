@@ -9,7 +9,7 @@ import notion_client
 import telegram
 from sources import himalayas, weworkremotely, remotive, jobicy, remoteok, arbeitnow
 from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
-from utils import strip_html
+from utils import strip_html, enrich_url
 
 logging.basicConfig(
     level=logging.INFO,
@@ -94,6 +94,7 @@ def run() -> None:
             db.log_job(run_id, job, "gpt_limit")
             continue
 
+        enrich_url(job)
         result = ats.analyze(job, resume)
         gpt_calls += 1
         logger.info(f"  {result.score:>3}/100  {job['title']} @ {job['company']}  [{job['source']}]")
