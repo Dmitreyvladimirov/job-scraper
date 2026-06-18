@@ -1,13 +1,13 @@
-"""FastAPI dashboard — reads from jobs.db and serves analytics charts."""
+"""FastAPI dashboard — reads from Postgres and serves analytics charts."""
 import json
 import os
-import sqlite3
-from pathlib import Path
 
+import psycopg2
+import psycopg2.extras
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).parent / "jobs.db"))
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
 
 app = FastAPI()
@@ -18,22 +18,19 @@ def health():
     return {"status": "ok"}
 
 
-def _db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")  # safe concurrent reads while scraper writes
-    return conn
-
-
 def _check_token(token: str):
     if TOKEN and token != TOKEN:
         raise HTTPException(status_code=403, detail="Invalid token")
 
 
 def _query(sql: str, params=()) -> list[dict]:
-    with _db() as conn:
-        rows = conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
 
 
 @app.get("/", response_class=HTMLResponse)
