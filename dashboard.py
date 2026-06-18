@@ -109,7 +109,7 @@ def dashboard(token: str = Query(default="")):
     """)
 
     # --- serialize for JS ---
-    daily_labels = json.dumps([r["day"] for r in daily])
+    daily_labels = json.dumps([str(r["day"]) for r in daily])
     daily_qualified = json.dumps([r["qualified"] for r in daily])
     daily_fetched = json.dumps([r["fetched"] for r in daily])
 
@@ -132,7 +132,7 @@ def dashboard(token: str = Query(default="")):
         src = json.loads(r["sources_json"]) if r["sources_json"] else {}
         src_str = " · ".join(f"{k}: {v}" for k, v in src.items() if v)
         rows_html += f"""<tr>
-            <td>{r['started_at'][:16]}</td>
+            <td>{str(r['started_at'])[:16]}</td>
             <td>{r['total_fetched']}</td>
             <td class="green">{r['qualified']}</td>
             <td>{r['low_score']}</td>
