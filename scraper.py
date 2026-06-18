@@ -92,6 +92,10 @@ def run() -> None:
         telegram.send_error("⚠️ Все job boards вернули 0 вакансий — возможны проблемы со скрапингом")
 
     seen_urls, seen_keys = db.load_seen_jobs()
+    # Also load from Notion to catch pre-Postgres history (transition period)
+    notion_seen_urls, notion_seen_keys = notion_client.load_seen_urls()
+    seen_urls |= notion_seen_urls
+    seen_keys |= notion_seen_keys
     company_history = notion_client.load_company_applications(COMPANY_COOLDOWN_DAYS)
 
     counts = {"qualified": 0, "role": 0, "location": 0, "language": 0, "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
