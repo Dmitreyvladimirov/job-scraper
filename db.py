@@ -38,16 +38,20 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS jobs (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                run_id     INTEGER NOT NULL REFERENCES runs(id),
-                url        TEXT,
-                title      TEXT,
-                company    TEXT,
-                source     TEXT,
-                published  TEXT,
-                ats_score  INTEGER,
-                outcome    TEXT,  -- qualified | low_score | role | location | stale | dedup | gpt_limit
-                logged_at  TEXT DEFAULT (datetime('now'))
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id      INTEGER NOT NULL REFERENCES runs(id),
+                url         TEXT,
+                apply_url   TEXT,
+                title       TEXT,
+                company     TEXT,
+                source      TEXT,
+                published   TEXT,
+                description TEXT,
+                ats_score   INTEGER,
+                domain      TEXT,
+                why_not     TEXT,
+                outcome     TEXT,  -- qualified | low_score | role | location | stale | dedup | gpt_limit
+                logged_at   TEXT DEFAULT (datetime('now'))
             );
 
             CREATE INDEX IF NOT EXISTS idx_jobs_run_id ON jobs(run_id);
@@ -58,6 +62,10 @@ def init_db() -> None:
         for migration in [
             "ALTER TABLE jobs ADD COLUMN published TEXT",
             "ALTER TABLE runs ADD COLUMN filtered_language INTEGER DEFAULT 0",
+            "ALTER TABLE jobs ADD COLUMN apply_url TEXT",
+            "ALTER TABLE jobs ADD COLUMN description TEXT",
+            "ALTER TABLE jobs ADD COLUMN domain TEXT",
+            "ALTER TABLE jobs ADD COLUMN why_not TEXT",
         ]:
             try:
                 conn.execute(migration)
@@ -110,12 +118,35 @@ def finish_run(run_id: int, counts: dict, gpt_calls: int) -> None:
     logger.info(f"DB: run #{run_id} finished")
 
 
-def log_job(run_id: int, job: dict, outcome: str, ats_score: int | None = None) -> None:
+def log_job(
+    run_id: int,
+    job: dict,
+    outcome: str,
+    ats_score: int | None = None,
+    domain: str | None = None,
+    why_not: str | None = None,
+) -> None:
+    desc = (job.get("description") or "")[:8000]  # cap at 8k chars
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO jobs (run_id, url, title, company, source, published, ats_score, outcome) VALUES (?,?,?,?,?,?,?,?)",
-            (run_id, job.get("url"), job.get("title"), job.get("company"),
-             job.get("source"), job.get("published"), ats_score, outcome),
+            """INSERT INTO jobs
+               (run_id, url, apply_url, title, company, source, published,
+                description, ats_score, domain, why_not, outcome)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                run_id,
+                job.get("url"),
+                job.get("apply_url"),
+                job.get("title"),
+                job.get("company"),
+                job.get("source"),
+                job.get("published"),
+                desc,
+                ats_score,
+                domain,
+                why_not,
+                outcome,
+            ),
         )
 
 

@@ -167,7 +167,8 @@ def run() -> None:
                 seen_urls.add(job["url"])
                 seen_keys.add(job_key)
             counts["score"] += 1
-            db.log_job(run_id, job, "low_score", ats_score=result.score)
+            db.log_job(run_id, job, "low_score", ats_score=result.score,
+                       domain=result.domain, why_not=result.why_not)
             continue
 
         company_key = job.get("company", "").lower().strip()
@@ -180,7 +181,8 @@ def run() -> None:
             seen_urls.add(job["url"])
             seen_keys.add(job_key)
         counts["qualified"] += 1
-        db.log_job(run_id, job, "qualified", ats_score=result.score)
+        db.log_job(run_id, job, "qualified", ats_score=result.score,
+                   domain=result.domain, why_not=result.why_not)
         top_jobs.append({
             "title": job["title"],
             "company": job["company"],
