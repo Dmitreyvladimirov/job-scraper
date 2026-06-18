@@ -13,9 +13,15 @@ TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
 app = FastAPI()
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 def _db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")  # safe concurrent reads while scraper writes
     return conn
 
 
