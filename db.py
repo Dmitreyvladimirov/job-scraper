@@ -4,6 +4,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from utils import normalize_job_key
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +53,16 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_jobs_run_id ON jobs(run_id);
             CREATE INDEX IF NOT EXISTS idx_jobs_outcome ON jobs(outcome);
             CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at);
+            CREATE INDEX IF NOT EXISTS idx_jobs_url ON jobs(url);
         """)
-        # migrate existing DB that may lack the published column
-        try:
-            conn.execute("ALTER TABLE jobs ADD COLUMN published TEXT")
-        except sqlite3.OperationalError:
-            pass
+        for migration in [
+            "ALTER TABLE jobs ADD COLUMN published TEXT",
+            "ALTER TABLE runs ADD COLUMN filtered_language INTEGER DEFAULT 0",
+        ]:
+            try:
+                conn.execute(migration)
+            except sqlite3.OperationalError:
+                pass
     logger.info(f"DB: initialised at {DB_PATH}")
 
 
@@ -82,6 +87,7 @@ def finish_run(run_id: int, counts: dict, gpt_calls: int) -> None:
                 qualified          = ?,
                 rejected_low_score = ?,
                 filtered_role      = ?,
+                filtered_language  = ?,
                 filtered_location  = ?,
                 filtered_stale     = ?,
                 filtered_dedup     = ?,
@@ -93,6 +99,7 @@ def finish_run(run_id: int, counts: dict, gpt_calls: int) -> None:
             counts.get("qualified", 0),
             counts.get("score", 0),
             counts.get("role", 0),
+            counts.get("language", 0),
             counts.get("location", 0),
             counts.get("stale", 0),
             counts.get("dedup", 0),
@@ -110,3 +117,24 @@ def log_job(run_id: int, job: dict, outcome: str, ats_score: int | None = None) 
             (run_id, job.get("url"), job.get("title"), job.get("company"),
              job.get("source"), job.get("published"), ats_score, outcome),
         )
+
+
+def load_seen_jobs() -> tuple[set[str], set[tuple[str, str]]]:
+    """Return (seen_urls, seen_keys) from SQLite — the source of truth for dedup.
+    Only includes jobs that were actually sent to GPT (qualified + low_score).
+    Filtered-out jobs (role/location/language/stale) are excluded — they may
+    legitimately reappear from another source with a better description.
+    """
+    seen_urls: set[str] = set()
+    seen_keys: set[tuple[str, str]] = set()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT url, title, company FROM jobs WHERE outcome IN ('qualified', 'low_score')"
+        ).fetchall()
+    for row in rows:
+        if row["url"]:
+            seen_urls.add(row["url"])
+        if row["title"] and row["company"]:
+            seen_keys.add(normalize_job_key(row["company"], row["title"]))
+    logger.info(f"DB: {len(seen_urls)} seen URLs, {len(seen_keys)} seen job keys (source of truth)")
+    return seen_urls, seen_keys

@@ -30,7 +30,14 @@ class ATSResult:
 
 def analyze(job: dict, resume_text: str) -> ATSResult:
     """Score job against resume using explicit rubric. Returns structured analysis."""
-    prompt = f"""You are an ATS scorer. Score this job against the candidate's profile using a strict rubric.
+    prompt = f"""You are a strict ATS scorer. Score this job against the candidate's profile.
+
+CALIBRATION — read before scoring:
+- Score distribution: 30–55 = poor fit, 56–69 = weak fit, 70–79 = decent, 80–89 = strong, 90+ = exceptional (very rare)
+- Most jobs should score 50–70. Score above 80 requires: confirmed senior title + strong direct domain experience + most must-haves covered + perfect location
+- When uncertain between two values, always pick the lower one
+- "Years of PM experience in B2B SaaS" is NOT domain-specific experience. Only count explicit work IN the exact domain (built ML features, worked at FinTech, ran cybersecurity product line, etc.)
+- A generic PM background scores 5–8 on Domain Experience, NOT 12–15
 
 CANDIDATE PROFILE:
 - Target role: Senior Product Manager
