@@ -8,13 +8,33 @@ import sqlite3
 import psycopg2
 import psycopg2.extras
 
-DB_PATH = os.environ.get("DB_PATH", "/data/jobs.db")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
-
 if not DATABASE_URL:
     raise SystemExit("ERROR: DATABASE_URL is not set")
-if not os.path.exists(DB_PATH):
-    raise SystemExit(f"ERROR: SQLite not found at {DB_PATH}")
+
+# Find SQLite file — check DB_PATH env var, then common locations
+_candidates = [
+    os.environ.get("DB_PATH", ""),
+    "/data/jobs.db",
+    "/app/jobs.db",
+    "/app/data/jobs.db",
+    "/var/data/jobs.db",
+]
+
+# Also search mounted volumes
+import glob
+_found = glob.glob("/data/**/*.db", recursive=True) + glob.glob("/var/**/*.db", recursive=True)
+print(f"DB search: candidates={_candidates}, found on disk={_found}")
+
+DB_PATH = next((p for p in _candidates + _found if p and os.path.exists(p)), None)
+if not DB_PATH:
+    # Print directory listing for debug
+    for d in ["/data", "/app", "/var/data", "/"]:
+        try:
+            print(f"  ls {d}: {os.listdir(d)}")
+        except Exception as e:
+            print(f"  ls {d}: {e}")
+    raise SystemExit("ERROR: SQLite file not found — check DB_PATH env var")
 
 sqlite = sqlite3.connect(DB_PATH)
 sqlite.row_factory = sqlite3.Row
