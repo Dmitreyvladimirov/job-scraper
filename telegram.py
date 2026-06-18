@@ -1,8 +1,11 @@
 import json
 import logging
+import os
 import urllib.request
 from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 from notion_client import NOTION_DB_URL
+
+_DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "")
 
 logger = logging.getLogger(__name__)
 
@@ -34,25 +37,27 @@ def send_run_summary(counts: dict, top_jobs: list[dict], source_counts: dict | N
         sources_line = "📡 " + " | ".join(f"{n}: {c}" for n, c in source_counts.items()) + "\n"
 
     if qualified == 0:
+        dashboard_link = f" | [Дашборд]({_DASHBOARD_URL})" if _DASHBOARD_URL else ""
         text = (
             f"🤖 Прогон завершён\n"
             f"{sources_line}"
             f"Новых вакансий не найдено "
             f"(всего: {total}, дубликаты: {deduped}, низкий скор: {low_score})\n"
-            f"[Открыть Notion]({NOTION_DB_URL})"
+            f"[Открыть Notion]({NOTION_DB_URL}){dashboard_link}"
         )
     else:
         top_lines = ""
         for j in top_jobs[:3]:
             top_lines += f"• {j['title']} @ {j['company']} — {j['score']}/100\n"
 
+        dashboard_link = f" | [Дашборд]({_DASHBOARD_URL})" if _DASHBOARD_URL else ""
         text = (
             f"🤖 *Прогон завершён*\n\n"
             f"{sources_line}"
             f"✅ Новых вакансий: *{qualified}*\n"
             f"📊 Всего проверено: {total} | Дубликаты: {deduped} | Низкий скор: {low_score}\n\n"
             f"{top_lines}"
-            f"\n[Открыть Notion]({NOTION_DB_URL})"
+            f"\n[Открыть Notion]({NOTION_DB_URL}){dashboard_link}"
         )
 
     try:
