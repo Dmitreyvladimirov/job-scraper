@@ -14,7 +14,7 @@ def fetch() -> list[dict]:
     try:
         resp = retry(lambda: requests.get(
             URL,
-            params={"tag": "product-manager"},
+            params={"tag": "product"},
             headers=HEADERS,
             timeout=15,
         ))

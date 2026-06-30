@@ -45,6 +45,36 @@ def passes_language_filter(job: dict) -> bool:
     return sum(1 for w in words if w in _BLOCKED_STOPWORDS) < 3
 
 
+_RUSSIA_CITIES = re.compile(
+    r"\b("
+    r"москв[аеуи]?|moscow|московск\w*|г\.?\s*москва|"
+    r"санкт.?петербург|питер|петербург|спб|saint.?petersburg|"
+    r"новосибирск|екатеринбург|казань|краснодар|"
+    r"ростов.на.дону|ростов|нижний.новгород|уфа|самара|"
+    r"омск|воронеж|пермь|волгоград|красноярск|челябинск|"
+    r"тюмень|кемерово|томск|иркутск|барнаул|ставрополь|тула"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RUSSIA_KEYWORDS = re.compile(
+    r"\b(россия|russia|российск\w*|рф|r\.?f\.?\b|в\s+россию|из\s+России)\b",
+    re.IGNORECASE,
+)
+
+
+def is_russia_based(job: dict) -> bool:
+    """Return True if the job is likely office-based in Russia or from a Russian company."""
+    fields = [
+        job.get("location", ""),
+        job.get("company", ""),
+        (job.get("_message_text") or "")[:800],
+        (job.get("description") or "")[:800],
+    ]
+    combined = " ".join(fields)
+    return bool(_RUSSIA_CITIES.search(combined) or _RUSSIA_KEYWORDS.search(combined))
+
+
 def passes_role_filter(job: dict) -> bool:
     title = job.get("title", "").lower()
     return any(kw in title for kw in PM_ROLE_KEYWORDS)

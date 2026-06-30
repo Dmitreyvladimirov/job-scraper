@@ -55,6 +55,29 @@ props = _make_properties(job, "rejected_by_scraper", "🚫 Отклонено", 
 
 ---
 
+## [NEXT] Фильтрация вакансий по дате публикации
+
+**Зачем:** Источники возвращают старые вакансии (месяцы), а актуальны только свежие — не старше 2 недель, лучше до 7 дней.
+
+**Что сделать:**
+1. Парсить поле даты публикации из каждого источника (у всех оно есть: `published_at`, `date`, `pubDate` и т.п.)
+2. Хранить как `job["published_at"]` (ISO datetime string)
+3. Добавить фильтр в `filters.py`: пропускать вакансии старше `MAX_JOB_AGE_DAYS` (default = 14)
+4. Логировать отдельный счётчик: `stale: N`
+5. Добавить `MAX_JOB_AGE_DAYS` в `config.py`
+6. Опционально: писать дату публикации в Notion карточку (поле `Published`)
+
+**Где смотреть дату по источникам:**
+- Himalayas: `published_at` в JSON
+- RemoteOK: `date` (unix timestamp)
+- Remotive: `publication_date`
+- Jobicy: `jobGeo` + `pubDate` (RSS)
+- WeWorkRemotely: `pubDate` (RSS)
+
+**Ожидаемый эффект:** Сильно сократит шум — не будет показывать вакансии за январь в июне.
+
+---
+
 ## [MANUAL CHECK] После следующей вакансии с высоким ATS
 
 После того как придёт первая хорошая вакансия (score ≥ 70), открыть сгенерированный Google Doc и проверить:

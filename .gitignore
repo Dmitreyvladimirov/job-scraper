@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 base_resume.md
+telegram_session*
 
 setup_template.py
 test_gdocs.py

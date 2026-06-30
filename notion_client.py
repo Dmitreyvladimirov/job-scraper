@@ -17,12 +17,18 @@ NOTION_DB_URL = f"https://www.notion.so/{NOTION_DATABASE_ID.replace('-', '')}"
 
 
 def _post(url: str, payload: dict, method: str = "POST") -> dict:
+    import urllib.error
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method=method)
     for k, v in _HEADERS.items():
         req.add_header(k, v)
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        logger.error(f"Notion API {e.code}: {body[:500]}")
+        raise
 
 
 def _query_all(filter_payload: dict | None = None) -> list[dict]:
@@ -128,7 +134,34 @@ def _make_properties(job: dict, status2: str, status: str, score: int | None = N
         props["Компания"] = {"rich_text": [{"text": {"content": company[:255]}}]}
     if score is not None:
         props["ATS Score"] = {"number": score}
+    if job.get("russia_warning"):
+        props["Тип вакансии"] = {"select": {"name": "🇷🇺 Russia"}}
     return props
+
+
+def _utf16_len(s: str) -> int:
+    """Notion enforces a 2000 limit in UTF-16 code units (like JavaScript String.length).
+    Emoji outside the BMP (e.g. 🌎🚀) count as 2 units each."""
+    return sum(2 if ord(c) > 0xFFFF else 1 for c in s)
+
+
+def _split_for_notion(text: str, max_units: int = 1990) -> list[str]:
+    """Split text into chunks that are each ≤ max_units UTF-16 code units."""
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for char in text:
+        char_len = 2 if ord(char) > 0xFFFF else 1
+        if current_len + char_len > max_units:
+            chunks.append("".join(current))
+            current = [char]
+            current_len = char_len
+        else:
+            current.append(char)
+            current_len += char_len
+    if current:
+        chunks.append("".join(current))
+    return chunks
 
 
 def _text_block(content: str) -> dict:
@@ -172,6 +205,12 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url:
         _text_block(f"🎯 Не хватает: {missed_str}"),
     ]
 
+    if job.get("russia_warning"):
+        children.append(_callout(
+            "🇷🇺 Компания или офис в России — проверь условия перед откликом.",
+            "🇷🇺"
+        ))
+
     if job.get("incomplete_description"):
         children.append(_callout(
             "Описание взято из RemoteOK (краткое AI-саммари) — прямая ссылка не найдена. "
@@ -202,9 +241,10 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url:
     # Full JD in a toggle
     description = job.get("description", "")
     if description:
-        jd_children = []
-        for i in range(0, min(len(description), 10000), 2000):
-            jd_children.append(_text_block(description[i:i + 2000]))
+        jd_children = [
+            _text_block(chunk)
+            for chunk in _split_for_notion(description[:10000])
+        ]
         children.append({
             "object": "block", "type": "toggle",
             "toggle": {

@@ -206,6 +206,37 @@ def enrich_url(job: dict) -> None:
         logger.info(f"URL enriched: {job['company']} → {direct}")
 
 
+_GENERIC_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; job-scraper/1.0)"}
+
+# Tags whose full content (including children) we drop before text extraction
+_DROP_TAGS = re.compile(
+    r"<(script|style|nav|header|footer|aside|noscript)(\s[^>]*)?>.*?</\1>",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def fetch_url_generic(url: str, max_chars: int = 6000) -> str:
+    """Fetch an arbitrary web page and return its readable text content.
+
+    Used as a fallback for job pages not served by Greenhouse / Lever / Ashby APIs.
+    Works well for server-rendered pages; may return sparse content for JS-only SPAs.
+    """
+    if not url:
+        return ""
+    try:
+        resp = requests.get(url, headers=_GENERIC_HEADERS, timeout=12, allow_redirects=True)
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if "text/html" not in content_type and "text/plain" not in content_type:
+            return ""
+        html = _DROP_TAGS.sub(" ", resp.text)
+        text = strip_html(unescape(html))
+        return text[:max_chars]
+    except Exception as e:
+        logger.debug(f"fetch_url_generic failed for {url}: {e}")
+        return ""
+
+
 def retry(fn, retries: int = 3, backoff: float = 2.0):
     """Call fn(), retry on exception with exponential backoff."""
     for attempt in range(retries):

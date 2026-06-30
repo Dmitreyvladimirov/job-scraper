@@ -81,11 +81,32 @@
 
 ### Средний приоритет
 
-#### Feedback loop
-Когда статус карточки в Notion меняется на "applied" или "interview" — бот должен знать.
-- Webhook или polling Notion API
-- Хранить историю статусов в SQLite
-- Показывать в дашборде: conversion rate по источникам и доменам
+#### ResumeBuilder ↔ DB интеграция + status history
+Полная интеграция ручных заявок (ResumeBuilder workflow) в Postgres + история смены статусов.
+
+**Архитектура (спроектирована, готова к реализации):**
+
+Schema changes:
+- `jobs`: добавить `notion_id TEXT UNIQUE`, `current_status TEXT`, `source_type TEXT DEFAULT 'scraper'`, `deleted_at TIMESTAMP`; `run_id` → nullable
+- Новый индекс `idx_status_log_job_id ON status_log(job_id)`
+- Новая таблица `status_log (id, job_id, old_status, new_status, changed_at, source)`
+- Новая таблица `sync_meta (key, value)` — хранит `last_sync_at` для инкрементального polling
+
+Новые файлы:
+- `db_manual.py` — INSERT manual job сразу после Step 2.5 (merge по url если вакансия уже есть от скрапера)
+- `sync_notion.py` — polling Notion с фильтром `last_edited_time >= last_sync_at`, обновляет `current_status`, пишет в `status_log`
+
+Изменения в существующих файлах:
+- `db.py` — все JOIN к `runs` → LEFT JOIN
+- Step 2.5 в ResumeBuilder CLAUDE.md — добавить вызов `db_manual.py` после создания Notion карточки (fire-and-forget, не блокирует PDF)
+
+Known limitations:
+- Intermediate status transitions могут теряться между синками (принято как known gap)
+- Notion page deletion: tombstone через `deleted_at` при `archived: true` в API ответе
+
+Pre-ship checklist: идемпотентность upsert, sync failure не блокирует PDF, 3+ реальных статус-переходов end-to-end
+
+Открытый вопрос: наличие DATABASE_URL в `.env` локально (для вызова из ResumeBuilder контекста)
 
 #### WeWorkRemotely и Arbeitnow: fetch full JD
 Аналогично RemoteOK — после обогащения URL загружать полный JD из прямого источника.

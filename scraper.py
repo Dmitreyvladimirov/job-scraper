@@ -9,9 +9,9 @@ import db
 import notion_client
 import telegram
 import sheets
-from sources import himalayas, weworkremotely, remotive, jobicy, remoteok, arbeitnow
+from sources import himalayas, weworkremotely, remotive, jobicy, remoteok, arbeitnow, telegram_channels
 from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
-from utils import strip_html, enrich_url, normalize_job_key, fetch_jd_from_url
+from utils import strip_html, enrich_url, normalize_job_key, fetch_jd_from_url, fetch_url_generic
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,12 +39,13 @@ def run() -> None:
     resume = load_resume()
 
     sources_data = [
-        ("Himalayas",       himalayas.fetch()),
-        ("WeWorkRemotely",  weworkremotely.fetch()),
-        ("Remotive",        remotive.fetch()),
-        ("Jobicy",          jobicy.fetch()),
-        ("RemoteOK",        remoteok.fetch()),
-        ("Arbeitnow",       arbeitnow.fetch()),
+        ("Himalayas",           himalayas.fetch()),
+        ("WeWorkRemotely",      weworkremotely.fetch()),
+        ("Remotive",            remotive.fetch()),
+        ("Jobicy",              jobicy.fetch()),
+        ("RemoteOK",            remoteok.fetch()),
+        ("Arbeitnow",           arbeitnow.fetch()),
+        ("TelegramChannels",    telegram_channels.fetch()),
     ]
     source_counts = {name: len(batch) for name, batch in sources_data}
     jobs = [j for _, batch in sources_data for j in batch]
@@ -147,6 +148,24 @@ def run() -> None:
 
         enrich_url(job)
 
+        # For Telegram jobs: fetch full JD from the linked page; fallback to message text
+        if job.get("source", "").startswith("Telegram:"):
+            has_url = job.pop("_has_job_url", False)
+            message_text = job.pop("_message_text", "")
+            if has_url:
+                job_url = job.get("url", "")
+                description = fetch_jd_from_url(job_url)
+                if not description:
+                    description = fetch_url_generic(job_url)
+                if description:
+                    job["description"] = description
+                    logger.info(f"  JD fetched: {len(description)} chars for {job['title']} @ {job['company']}")
+                else:
+                    job["description"] = message_text
+                    logger.info(f"  ⚠️ No JD fetched for {job['title']} @ {job['company']}, using message text")
+            else:
+                job["description"] = message_text
+
         # For RemoteOK jobs: fetch full JD from the direct URL (RemoteOK only stores AI summary)
         if job.get("source", "").lower() == "remoteok":
             apply_url = job.get("apply_url") or ""
@@ -161,15 +180,18 @@ def run() -> None:
                 job["incomplete_description"] = True
                 logger.info(f"  ⚠️ No direct URL — scoring {job['title']} @ {job['company']} from RemoteOK summary")
 
+        if filters.is_russia_based(job):
+            job["russia_warning"] = True
+            logger.info(f"  🇷🇺 Russia warning: {job['title']} @ {job['company']}")
+
         result = ats.analyze(job, resume)
         gpt_calls += 1
         logger.info(f"  {result.score:>3}/100  {job['title']} @ {job['company']}  [{job['source']}]")
 
         if result.score < ATS_THRESHOLD:
-            ok = notion_client.create_rejected_entry(job, result.score)
-            if ok:
-                seen_urls.add(job["url"])
-                seen_keys.add(job_key)
+            notion_client.create_rejected_entry(job, result.score)
+            seen_urls.add(job["url"])
+            seen_keys.add(job_key)
             counts["score"] += 1
             db.log_job(run_id, job, "low_score", ats_score=result.score,
                        domain=result.domain, why_not=result.why_not)
@@ -181,9 +203,8 @@ def run() -> None:
             logger.info(f"  ⚠️  Cooldown: {cooldown_match['company']} {cooldown_match['days_ago']}d ago")
 
         ok = notion_client.create_entry(job, result, cooldown_match=cooldown_match)
-        if ok:
-            seen_urls.add(job["url"])
-            seen_keys.add(job_key)
+        seen_urls.add(job["url"])
+        seen_keys.add(job_key)
         counts["qualified"] += 1
         db.log_job(run_id, job, "qualified", ats_score=result.score,
                    domain=result.domain, why_not=result.why_not)
@@ -191,6 +212,7 @@ def run() -> None:
             "title": job["title"],
             "company": job["company"],
             "score": result.score,
+            "russia_warning": job.get("russia_warning", False),
         })
 
     top_jobs.sort(key=lambda x: x["score"], reverse=True)
