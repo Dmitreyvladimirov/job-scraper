@@ -46,13 +46,13 @@ CANDIDATE PROFILE:
 - Experience: 7+ years PM, B2B SaaS platforms, AI-driven systems, payments, edtech
 
 JOB TITLE: {job['title']}
-COMPANY: {job['company']}
+COMPANY: {job.get('company') or '(see description)'}
 
 JOB DESCRIPTION:
-{job['description'][:3000]}
+{job['description'][:5000]}
 
 CANDIDATE RESUME:
-{resume_text[:2500]}
+{resume_text[:7000]}
 
 SCORING RUBRIC — sum all four dimensions, then apply penalty if triggered:
 

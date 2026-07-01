@@ -132,6 +132,13 @@ def _pick_job_url(links: list[tuple[str, str]], text: str) -> str | None:
             if _is_job_url(url):
                 return url
 
+    # Priority 4: any external link not in skip list and not a listing page
+    # Catches company career pages that aren't on known ATS domains
+    for url, display in primary:
+        url_lower = url.lower()
+        if not any(pat in url_lower for pat in _SKIP_URL_PATTERNS) and not _is_listing_page(url):
+            return url
+
     return None
 
 

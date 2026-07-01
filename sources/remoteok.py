@@ -37,6 +37,7 @@ def fetch() -> list[dict]:
             "title": item.get("position", ""),
             "company": item.get("company", ""),
             "url": item.get("url", ""),
+            "apply_url": item.get("apply_url", ""),
             "description": item.get("description", ""),
             "location": location,
             "salary": item.get("salary", ""),

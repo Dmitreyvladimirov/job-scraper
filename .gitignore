@@ -7,3 +7,5 @@ telegram_session*
 setup_template.py
 test_gdocs.py
 get_google_token.py
+test_telegram.py
+jobs.db

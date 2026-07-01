@@ -1,3 +1,4 @@
+import re
 import sys
 import logging
 from datetime import datetime, timezone
@@ -171,7 +172,7 @@ def run() -> None:
             apply_url = job.get("apply_url") or ""
             jd_enriched = False
             if apply_url and apply_url != job.get("url", ""):
-                full_jd = fetch_jd_from_url(apply_url)
+                full_jd = fetch_jd_from_url(apply_url) or fetch_url_generic(apply_url)
                 if full_jd and len(full_jd) > len(job.get("description") or ""):
                     job["description"] = full_jd
                     jd_enriched = True
@@ -179,6 +180,15 @@ def run() -> None:
             if not jd_enriched:
                 job["incomplete_description"] = True
                 logger.info(f"  ⚠️ No direct URL — scoring {job['title']} @ {job['company']} from RemoteOK summary")
+
+        # Try to extract company name from description if missing
+        if not job.get("company") and job.get("description"):
+            m = re.search(
+                r"(?:компания|company|at|in|работодатель)[:\s]+([A-ZА-ЯЁ][^\n,.(]{2,40})",
+                job["description"][:1500], re.IGNORECASE,
+            )
+            if m:
+                job["company"] = m.group(1).strip()
 
         if filters.is_russia_based(job):
             job["russia_warning"] = True
