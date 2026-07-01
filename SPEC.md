@@ -47,7 +47,7 @@ run.sh            ← entrypoint для Railway
 | WeWorkRemotely | RSS | Среднее описание |
 | Arbeitnow | JSON API | Много немецких вакансий — отсеиваются языковым фильтром |
 | RemoteOK | JSON API | Короткое AI-саммари — обогащается из прямого источника (см. ниже) |
-| Telegram каналы | Web scraping (t.me/s/) | 11 каналов, без авторизации, парсинг HTML |
+| Telegram каналы | Web scraping (t.me/s/) | 20 каналов, без авторизации, парсинг HTML |
 
 ### Telegram каналы (sources/telegram_channels.py)
 
