@@ -23,14 +23,18 @@ _APPLY_INDICATORS = {"тут", "here", "apply", "откликнуться", "п�
 
 _JOB_URL_PATTERNS = [
     "greenhouse.io", "lever.co", "ashby.com", "workable.com",
-    "smartrecruiters.com", "remocate.app/jobs", "linkedin.com/jobs/",
+    "smartrecruiters.com", "remocate.app/jobs",
     "hh.ru/vacancy/", "/jobs/", "/careers/", "/vacancy/", "/job/",
 ]
 
+# linkedin.com is never fetchable without login — every page (job listings included)
+# returns the same "Sign in to LinkedIn... Continue to join or sign in" auth-wall
+# boilerplate as body text, which was leaking into company/JD fields. Treat all of
+# linkedin.com as unfetchable rather than whitelisting specific sub-paths.
 _SKIP_URL_PATTERNS = [
     "t.me/", "youtube.com", "youtu.be", "twitter.com", "x.com",
-    "/people/", "annualreport", "tilda.ws", "linkedin.com/company/",
-    "linkedin.com/in/", "instagram.com", "facebook.com",
+    "/people/", "annualreport", "tilda.ws", "linkedin.com",
+    "instagram.com", "facebook.com",
 ]
 
 _SECONDARY_MARKERS = [
@@ -165,7 +169,13 @@ def _parse_messages(html: str) -> list[dict]:
         if not text_el:
             continue
 
-        text = text_el.get_text(separator="\n").strip()
+        # get_text(separator="\n") would insert a newline at every tag boundary,
+        # not just real line breaks — splitting "Title в <b>Company</b>" onto two
+        # "lines" and breaking title/company extraction. Replace only actual <br>
+        # tags with newlines first, then join inline content with no separator.
+        for br in text_el.find_all("br"):
+            br.replace_with("\n")
+        text = text_el.get_text().strip()
         if not text or len(text) < 20:
             continue
 

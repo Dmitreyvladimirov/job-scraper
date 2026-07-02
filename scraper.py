@@ -184,7 +184,7 @@ def run() -> None:
         # Try to extract company name from description if missing
         if not job.get("company") and job.get("description"):
             m = re.search(
-                r"(?:компания|company|at|in|работодатель)[:\s]+([A-ZА-ЯЁ][^\n,.(]{2,40})",
+                r"\b(?:компания|company|работодатель)[:\s]+([A-ZА-ЯЁ][^\n,.(]{2,40})",
                 job["description"][:1500], re.IGNORECASE,
             )
             if m:
