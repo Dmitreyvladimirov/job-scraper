@@ -104,6 +104,35 @@ def test_absolute_job_url_is_accepted():
     assert _pick_job_url([(url, "Apply")], "Apply") == url
 
 
+def test_fallback_title_does_not_inherit_primary_role_url():
+    text = """Product Designer в Example
+Откликнуться: тут
+Другие вакансии:
+— Senior Product Manager"""
+    links = [("https://jobs.example.com/jobs/designer", "тут")]
+    title, _ = _extract_title_company(text)
+
+    assert title == "Senior Product Manager"
+    assert _pick_job_url(links, text, title) is None
+
+
+def test_fallback_title_uses_its_own_link():
+    text = """Дайджест вакансий
+— Senior Product Manager"""
+    url = "https://jobs.example.com/jobs/product-manager"
+    links = [(url, "Senior Product Manager")]
+
+    assert _pick_job_url(links, text, "Senior Product Manager") == url
+
+
+def test_pm_mention_in_prose_is_not_promoted_to_title():
+    text = """Бизнес-аналитик
+Взаимодействовать с Product Manager, разработчиками и дизайнерами"""
+    title, _ = _extract_title_company(text)
+
+    assert title == "Бизнес-аналитик"
+
+
 def test_quality_gate_rejects_short_jd_before_ats():
     job = {
         "source": "Telegram:example",

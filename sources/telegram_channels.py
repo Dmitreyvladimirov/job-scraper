@@ -90,6 +90,11 @@ def _has_pm_signal(text: str) -> bool:
     return bool(_PM_ROLE_RE.search(text or ""))
 
 
+def _is_pm_role_line(text: str) -> bool:
+    match = _PM_ROLE_RE.search(text or "")
+    return bool(match and match.start() <= 12 and len(text) <= 140)
+
+
 def _clean_title(value: str) -> str:
     value = _TITLE_PREFIX_RE.sub("", value.strip())
     value = re.sub(r"https?://\S+", "", value).strip(" \t:—-•")
@@ -158,10 +163,10 @@ def _extract_title_company(text: str) -> tuple[str, str]:
 
     title_index = 0
     title_line = first_line_clean
-    if not _has_pm_signal(title_line):
+    if not _is_pm_role_line(title_line):
         for idx, line in enumerate(lines):
             candidate = _clean_title(line)
-            if _has_pm_signal(candidate):
+            if _is_pm_role_line(candidate):
                 title_index = idx
                 title_line = candidate
                 break
@@ -211,8 +216,50 @@ def _extract_location(text: str) -> str:
     return ""
 
 
-def _pick_job_url(links: list[tuple[str, str]], text: str) -> str | None:
+def _pick_job_url(
+    links: list[tuple[str, str]],
+    text: str,
+    title: str = "",
+) -> str | None:
     cutoff = _secondary_offset(text)
+
+    # When title fallback selected a role below an intro or inside a digest,
+    # only accept a link that names that role or immediately follows it.
+    title_pos = text.lower().find(title.lower()) if title else -1
+    first_line_end = text.find("\n")
+    if title_pos > max(first_line_end, 0):
+        title_key = re.sub(r"\W+", " ", title.lower()).strip()
+        block_end = text.find("\n\n", title_pos)
+        if block_end == -1:
+            block_end = title_pos + 300
+        nearby = []
+        for url, display in links:
+            if not _is_absolute_http_url(url) or _is_navigation_url(url):
+                continue
+            display_pos = text.find(display) if display else -1
+            display_key = re.sub(r"\W+", " ", display.lower()).strip()
+            names_role = bool(
+                display_key
+                and (
+                    title_key in display_key
+                    or display_key in title_key
+                )
+            )
+            follows_role = title_pos <= display_pos <= block_end
+            if names_role or follows_role:
+                nearby.append((url, display))
+
+        for url, display in nearby:
+            if _is_job_url(url, display):
+                return url
+        for url, _ in nearby:
+            url_lower = url.lower()
+            if (
+                not any(pat in url_lower for pat in _SKIP_URL_PATTERNS)
+                and not _is_listing_page(url)
+            ):
+                return url
+        return None
 
     # Build list of (url, display, position_in_text) — only links before secondary section
     primary = []
@@ -431,7 +478,7 @@ def _fetch_channel(
             if not title or len(title) < 4:
                 continue
 
-            main_url = _pick_job_url(msg["links"], msg["text"])
+            main_url = _pick_job_url(msg["links"], msg["text"], title)
             tg_url = f"https://t.me/{slug}/{msg['msg_id']}" if msg.get("msg_id") else f"https://t.me/{slug}"
             source = f"Telegram:{slug}"
 
