@@ -38,6 +38,51 @@ def root(token: str = Query(default="")):
     return HTMLResponse(f'<meta http-equiv="refresh" content="0;url=/dashboard?token={token}">')
 
 
+@app.get("/telegram", response_class=HTMLResponse)
+def telegram_metrics(token: str = Query(default="")):
+    _check_token(token)
+    rows = _query("""
+        SELECT m.channel,
+               SUM(m.fetched) AS fetched,
+               SUM(m.pm_signal) AS pm_signal,
+               SUM(m.role_pass) AS role_pass,
+               SUM(m.enriched) AS enriched,
+               SUM(m.quality_gate) AS quality_gate,
+               SUM(m.ats) AS ats,
+               SUM(m.qualified) AS qualified
+        FROM telegram_channel_metrics m
+        JOIN runs r ON r.id = m.run_id
+        WHERE r.started_at::timestamptz >= NOW() - INTERVAL '30 days'
+        GROUP BY m.channel
+        ORDER BY qualified DESC, quality_gate DESC, fetched DESC
+    """)
+    body = "".join(
+        "<tr>"
+        f"<td>@{r['channel']}</td><td>{r['fetched']}</td><td>{r['pm_signal']}</td>"
+        f"<td>{r['role_pass']}</td><td>{r['enriched']}</td>"
+        f"<td>{r['quality_gate']}</td><td>{r['ats']}</td>"
+        f"<td>{r['qualified']}</td></tr>"
+        for r in rows
+    )
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telegram channel quality</title>
+<style>
+body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+background:#0f1117;color:#e0e0e0;padding:24px }}
+h1 {{ font-size:20px }} p {{ color:#888 }}
+table {{ width:100%;border-collapse:collapse;background:#1c1f2b }}
+th,td {{ text-align:left;padding:10px;border-bottom:1px solid #2a2d3a }}
+th {{ color:#888;font-weight:500 }} td:last-child {{ color:#4ade80;font-weight:600 }}
+</style></head><body>
+<h1>Telegram channel quality — last 30 days</h1>
+<p>Fetched messages → PM signal → role pass → JD enriched → quality gate → ATS → qualified</p>
+<table><tr><th>Channel</th><th>Fetched</th><th>PM signal</th><th>Role pass</th>
+<th>Enriched</th><th>Quality gate</th><th>ATS</th><th>Qualified</th></tr>
+{body}</table></body></html>""")
+
+
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(token: str = Query(default="")):
     _check_token(token)

@@ -3,6 +3,7 @@ import sys
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import filters
 import ats
@@ -22,6 +23,36 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 RESUME_PATH = Path(__file__).parent / "base_resume.md"
+MIN_JD_LENGTH = 500
+
+
+def _absolute_http_url(url: str) -> bool:
+    try:
+        parsed = urlparse((url or "").strip())
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    except (TypeError, ValueError):
+        return False
+
+
+def _quality_gate_failure(job: dict) -> str | None:
+    quality_url = job.get("apply_url") or job.get("url") or ""
+    if not _absolute_http_url(quality_url):
+        return "missing_absolute_url"
+    if job.get("source", "").startswith("Telegram:") and not job.get("apply_url"):
+        return "missing_job_url"
+    if not (job.get("title") or "").strip():
+        return "missing_title"
+    description = (job.get("description") or "").strip()
+    if len(description) < MIN_JD_LENGTH:
+        return f"jd_too_short:{len(description)}"
+    return None
+
+
+def _telegram_channel(job: dict) -> str | None:
+    source = job.get("source", "")
+    if source.startswith("Telegram:"):
+        return source.split(":", 1)[1]
+    return None
 
 
 def load_resume() -> str:
@@ -39,6 +70,7 @@ def run() -> None:
     logger.info("=== Job Scraper started ===")
     resume = load_resume()
 
+    telegram_jobs, telegram_metrics = telegram_channels.fetch_with_metrics()
     sources_data = [
         ("Himalayas",           himalayas.fetch()),
         ("WeWorkRemotely",      weworkremotely.fetch()),
@@ -46,7 +78,7 @@ def run() -> None:
         ("Jobicy",              jobicy.fetch()),
         ("RemoteOK",            remoteok.fetch()),
         ("Arbeitnow",           arbeitnow.fetch()),
-        ("TelegramChannels",    telegram_channels.fetch()),
+        ("TelegramChannels",    telegram_jobs),
     ]
     source_counts = {name: len(batch) for name, batch in sources_data}
     jobs = [j for _, batch in sources_data for j in batch]
@@ -100,11 +132,16 @@ def run() -> None:
     seen_keys |= notion_seen_keys
     company_history = notion_client.load_company_applications(COMPANY_COOLDOWN_DAYS)
 
-    counts = {"qualified": 0, "role": 0, "location": 0, "language": 0, "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
+    counts = {
+        "qualified": 0, "role": 0, "location": 0, "language": 0,
+        "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0,
+        "incomplete_jd": 0,
+    }
     top_jobs: list[dict] = []
     gpt_calls = 0
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     run_id = db.start_run(total_fetched, source_counts)
+    db.save_telegram_channel_metrics(run_id, telegram_metrics)
 
     for job in jobs:
         if not job.get("url"):
@@ -114,6 +151,9 @@ def run() -> None:
             counts["role"] += 1
             db.log_job(run_id, job, "role")
             continue
+        channel = _telegram_channel(job)
+        if channel in telegram_metrics:
+            telegram_metrics[channel]["role_pass"] += 1
 
         if not filters.passes_language_filter(job):
             counts["language"] += 1
@@ -160,6 +200,8 @@ def run() -> None:
                     description = fetch_url_generic(job_url)
                 if description:
                     job["description"] = description
+                    if channel in telegram_metrics:
+                        telegram_metrics[channel]["enriched"] += 1
                     logger.info(f"  JD fetched: {len(description)} chars for {job['title']} @ {job['company']}")
                 else:
                     job["description"] = message_text
@@ -190,12 +232,26 @@ def run() -> None:
             if m:
                 job["company"] = m.group(1).strip()
 
+        gate_failure = _quality_gate_failure(job)
+        if gate_failure:
+            counts["incomplete_jd"] += 1
+            db.log_job(run_id, job, "incomplete_jd", why_not=gate_failure)
+            logger.info(
+                f"  ⚠️ Quality gate: {gate_failure} for "
+                f"{job.get('title', '')} @ {job.get('company', '')}"
+            )
+            continue
+        if channel in telegram_metrics:
+            telegram_metrics[channel]["quality_gate"] += 1
+
         if filters.is_russia_based(job):
             job["russia_warning"] = True
             logger.info(f"  🇷🇺 Russia warning: {job['title']} @ {job['company']}")
 
         result = ats.analyze(job, resume)
         gpt_calls += 1
+        if channel in telegram_metrics:
+            telegram_metrics[channel]["ats"] += 1
         logger.info(f"  {result.score:>3}/100  {job['title']} @ {job['company']}  [{job['source']}]")
 
         if result.score < ATS_THRESHOLD:
@@ -216,6 +272,8 @@ def run() -> None:
         seen_urls.add(job["url"])
         seen_keys.add(job_key)
         counts["qualified"] += 1
+        if channel in telegram_metrics:
+            telegram_metrics[channel]["qualified"] += 1
         db.log_job(run_id, job, "qualified", ats_score=result.score,
                    domain=result.domain, why_not=result.why_not)
         top_jobs.append({
@@ -226,6 +284,7 @@ def run() -> None:
         })
 
     top_jobs.sort(key=lambda x: x["score"], reverse=True)
+    db.save_telegram_channel_metrics(run_id, telegram_metrics)
     db.finish_run(run_id, counts, gpt_calls)
     sheets.log_run(counts, gpt_calls, source_counts, started_at=started_at)
     telegram.send_run_summary(counts, top_jobs, source_counts)
@@ -233,7 +292,8 @@ def run() -> None:
     logger.info(
         f"=== Done: {counts['qualified']} qualified | GPT calls: {gpt_calls}/{MAX_GPT_CALLS_PER_RUN} | "
         f"role:{counts['role']} language:{counts['language']} location:{counts['location']} "
-        f"stale:{counts['stale']} dedup:{counts['dedup']} low_score:{counts['score']} gpt_limit:{counts['gpt_limit']} ==="
+        f"stale:{counts['stale']} dedup:{counts['dedup']} incomplete_jd:{counts['incomplete_jd']} "
+        f"low_score:{counts['score']} gpt_limit:{counts['gpt_limit']} ==="
     )
 
 

@@ -53,6 +53,8 @@ PM_ROLE_KEYWORDS = [
     "director of product",
     "product director",
     "product owner",
+    "продакт",
+    "руководитель продукта",
 ]
 
 ISRAEL_KEYWORDS = [

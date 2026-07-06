@@ -10,6 +10,7 @@ import requests
 from html import unescape
 from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,71 @@ _SECONDARY_MARKERS = [
     "ещё вакансии", "больше вакансий",
 ]
 
+_PM_ROLE_RE = re.compile(
+    r"\b(?:"
+    r"(?:senior|lead|principal|technical|growth|group|ai|head|chief|vp|director)?\s*"
+    r"product\s+(?:manager|owner|lead|director)|"
+    r"head\s+of\s+product|chief\s+product\s+officer|cpo|"
+    r"продакт(?:-менеджер|-программист|-лид)?|"
+    r"руководител[ья]\s+продукт"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_TITLE_PREFIX_RE = re.compile(
+    r"^(?:вакансия|vacancy|позиция|position|роль|role)\s*[:—-]\s*",
+    re.IGNORECASE,
+)
+
+_INVALID_COMPANY_RE = re.compile(
+    r"^(?:remote|worldwide|удал[её]нно|senior|middle|junior|"
+    r"russia|россия|serbia|bulgaria|germany|hungary|singapore|"
+    r"полная занятость|гибрид|офис)$",
+    re.IGNORECASE,
+)
+
+
+def _is_absolute_http_url(url: str) -> bool:
+    try:
+        parsed = urlparse((url or "").strip())
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    except (TypeError, ValueError):
+        return False
+
+
+def _is_navigation_url(url: str) -> bool:
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+    if parsed.fragment and not path:
+        return True
+    if path.lower() in {"", "/search", "/jobs/search"}:
+        query = parsed.query.lower()
+        return not query or bool(re.search(r"(?:^|&)(?:q|query|search)=", query))
+    return False
+
+
+def _has_pm_signal(text: str) -> bool:
+    return bool(_PM_ROLE_RE.search(text or ""))
+
+
+def _clean_title(value: str) -> str:
+    value = _TITLE_PREFIX_RE.sub("", value.strip())
+    value = re.sub(r"https?://\S+", "", value).strip(" \t:—-•")
+    return value
+
+
+def _clean_company(value: str) -> str:
+    value = re.sub(r"^[\s:—-]+|[\s:—-]+$", "", value)
+    value = re.sub(
+        r"\s+(?:\(|,)\s*(?:senior|middle|junior).*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if not value or len(value) > 80 or _INVALID_COMPANY_RE.match(value):
+        return ""
+    return value
+
 
 def _is_listing_page(url: str) -> bool:
     """Return True if URL points to a general careers/jobs listing page (not a specific role).
@@ -58,6 +124,8 @@ def _is_listing_page(url: str) -> bool:
 
 
 def _is_job_url(url: str, display: str = "") -> bool:
+    if not _is_absolute_http_url(url) or _is_navigation_url(url):
+        return False
     url_lower = url.lower()
     for pat in _SKIP_URL_PATTERNS:
         if pat in url_lower:
@@ -86,15 +154,49 @@ def _extract_title_company(text: str) -> tuple[str, str]:
     lines = [l.strip() for l in text.split("\n") if l.strip()]
     first_line = lines[0] if lines else ""
     first_line = re.sub(r"^[\U00010000-\U0010ffff☀-⟿⬀-⯿\s]+", "", first_line)
-    first_line_clean = re.sub(r"https?://\S+", "", first_line).strip().rstrip(":")
+    first_line_clean = _clean_title(first_line)
+
+    title_index = 0
+    title_line = first_line_clean
+    if not _has_pm_signal(title_line):
+        for idx, line in enumerate(lines):
+            candidate = _clean_title(line)
+            if _has_pm_signal(candidate):
+                title_index = idx
+                title_line = candidate
+                break
+
+    # Explicit company labels near the selected role are the strongest signal.
+    for line in lines[title_index + 1:title_index + 5]:
+        m = re.match(
+            r"^(?:компания|company|работодатель)\s*[:—-]\s*(.+)$",
+            line,
+            re.IGNORECASE,
+        )
+        if m:
+            company = _clean_company(m.group(1))
+            if company:
+                return title_line, company
+
+    for pattern in (
+        r"^(.+?)\s+в\s+(.+?)(?:\s*[:(—\-]|$)",
+        r"^(.+?)\s+(?:at|@)\s+(.+?)(?:\s*[:(—\-]|$)",
+    ):
+        m = re.match(pattern, title_line, re.IGNORECASE)
+        if m:
+            return _clean_title(m.group(1)), _clean_company(m.group(2))
+
+    # A digest may name the company in its first role and mention the PM role
+    # later. Reuse only that company; never replace the selected PM title.
     for line in (first_line_clean, first_line):
-        m = re.match(r"^(.+?)\s+в\s+(.+?)(?:\s*[:(—\-]|$)", line)
-        if m:
-            return m.group(1).strip(), m.group(2).strip()
-        m = re.match(r"^(.+?)\s+(?:at|@)\s+(.+?)(?:\s*[:(—\-]|$)", line, re.IGNORECASE)
-        if m:
-            return m.group(1).strip(), m.group(2).strip()
-    return first_line_clean or first_line, ""
+        for pattern in (
+            r"^(.+?)\s+в\s+(.+?)(?:\s*[:(—\-]|$)",
+            r"^(.+?)\s+(?:at|@)\s+(.+?)(?:\s*[:(—\-]|$)",
+        ):
+            m = re.match(pattern, line, re.IGNORECASE)
+            if m:
+                return title_line, _clean_company(m.group(2))
+    return title_line or first_line_clean or first_line, ""
 
 
 def _extract_location(text: str) -> str:
@@ -115,6 +217,8 @@ def _pick_job_url(links: list[tuple[str, str]], text: str) -> str | None:
     # Build list of (url, display, position_in_text) — only links before secondary section
     primary = []
     for url, display in links:
+        if not _is_absolute_http_url(url) or _is_navigation_url(url):
+            continue
         pos = text.find(display) if display and display in text else len(text)
         if pos < cutoff:
             primary.append((url, display))
@@ -132,6 +236,8 @@ def _pick_job_url(links: list[tuple[str, str]], text: str) -> str | None:
     # Priority 3: first ~300 chars (Remocate style — URL right after title)
     short_text = text[:300]
     for url, display in links:
+        if not _is_absolute_http_url(url) or _is_navigation_url(url):
+            continue
         if url in short_text or display in short_text[:300]:
             if _is_job_url(url):
                 return url
@@ -249,6 +355,8 @@ def _expand_listing_page(
         if not href or href.startswith("#"):
             continue
         full_url = urljoin(base, href)
+        if not _is_absolute_http_url(full_url):
+            continue
         # Must be same domain and deeper path than the listing page
         if urlparse(full_url).netloc != urlparse(listing_url).netloc:
             continue
@@ -283,7 +391,12 @@ def _expand_listing_page(
     return jobs
 
 
-def _fetch_channel(channel: str, cutoff_date: datetime, max_pages: int = 5) -> list[dict]:
+def _fetch_channel(
+    channel: str,
+    cutoff_date: datetime,
+    max_pages: int = 5,
+    metrics: dict | None = None,
+) -> list[dict]:
     slug = channel.lstrip("@")
     url: str | None = f"https://t.me/s/{slug}"
     jobs = []
@@ -309,6 +422,11 @@ def _fetch_channel(channel: str, cutoff_date: datetime, max_pages: int = 5) -> l
                 except ValueError:
                     pass
 
+            if metrics is not None:
+                metrics["fetched"] += 1
+                if _has_pm_signal(msg["text"]):
+                    metrics["pm_signal"] += 1
+
             title, company = _extract_title_company(msg["text"])
             if not title or len(title) < 4:
                 continue
@@ -320,7 +438,12 @@ def _fetch_channel(channel: str, cutoff_date: datetime, max_pages: int = 5) -> l
             # If the only URL found is a listing page, expand it into individual roles
             if not main_url:
                 listing_url = next(
-                    (url for url, _ in msg["links"] if _is_listing_page(url) and "t.me/" not in url),
+                    (
+                        url for url, _ in msg["links"]
+                        if _is_absolute_http_url(url)
+                        and _is_listing_page(url)
+                        and "t.me/" not in url
+                    ),
                     None,
                 )
                 if listing_url:
@@ -353,21 +476,38 @@ def _fetch_channel(channel: str, cutoff_date: datetime, max_pages: int = 5) -> l
     return jobs
 
 
-def fetch() -> list[dict]:
+def fetch_with_metrics() -> tuple[list[dict], dict[str, dict[str, int]]]:
     from config import TELEGRAM_JOB_CHANNELS, MAX_JOB_AGE_DAYS
 
     if not TELEGRAM_JOB_CHANNELS:
-        return []
+        return [], {}
 
     days = MAX_JOB_AGE_DAYS or 14
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     all_jobs = []
+    channel_metrics: dict[str, dict[str, int]] = {}
     for channel in TELEGRAM_JOB_CHANNELS:
+        slug = channel.lstrip("@")
+        metrics = {
+            "fetched": 0,
+            "pm_signal": 0,
+            "role_pass": 0,
+            "enriched": 0,
+            "quality_gate": 0,
+            "ats": 0,
+            "qualified": 0,
+        }
+        channel_metrics[slug] = metrics
         try:
-            all_jobs.extend(_fetch_channel(channel, cutoff))
+            all_jobs.extend(_fetch_channel(channel, cutoff, metrics=metrics))
         except Exception as e:
             logger.error(f"Telegram: failed to fetch {channel}: {e}")
 
     logger.info(f"Telegram total: {len(all_jobs)} raw messages")
-    return all_jobs
+    return all_jobs, channel_metrics
+
+
+def fetch() -> list[dict]:
+    jobs, _ = fetch_with_metrics()
+    return jobs

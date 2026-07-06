@@ -59,6 +59,20 @@ def init_db() -> None:
                         logged_at   TIMESTAMP DEFAULT NOW()
                     )
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS telegram_channel_metrics (
+                        run_id       INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+                        channel      TEXT NOT NULL,
+                        fetched      INTEGER NOT NULL DEFAULT 0,
+                        pm_signal    INTEGER NOT NULL DEFAULT 0,
+                        role_pass    INTEGER NOT NULL DEFAULT 0,
+                        enriched     INTEGER NOT NULL DEFAULT 0,
+                        quality_gate INTEGER NOT NULL DEFAULT 0,
+                        ats          INTEGER NOT NULL DEFAULT 0,
+                        qualified    INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (run_id, channel)
+                    )
+                """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_run_id ON jobs(run_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_outcome ON jobs(outcome)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at)")
@@ -155,6 +169,43 @@ def log_job(
                         outcome,
                     ),
                 )
+    finally:
+        conn.close()
+
+
+def save_telegram_channel_metrics(run_id: int, metrics: dict[str, dict[str, int]]) -> None:
+    if not metrics:
+        return
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                for channel, counts in metrics.items():
+                    cur.execute(
+                        """INSERT INTO telegram_channel_metrics
+                           (run_id, channel, fetched, pm_signal, role_pass, enriched,
+                            quality_gate, ats, qualified)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                           ON CONFLICT (run_id, channel) DO UPDATE SET
+                               fetched = EXCLUDED.fetched,
+                               pm_signal = EXCLUDED.pm_signal,
+                               role_pass = EXCLUDED.role_pass,
+                               enriched = EXCLUDED.enriched,
+                               quality_gate = EXCLUDED.quality_gate,
+                               ats = EXCLUDED.ats,
+                               qualified = EXCLUDED.qualified""",
+                        (
+                            run_id,
+                            channel,
+                            counts.get("fetched", 0),
+                            counts.get("pm_signal", 0),
+                            counts.get("role_pass", 0),
+                            counts.get("enriched", 0),
+                            counts.get("quality_gate", 0),
+                            counts.get("ats", 0),
+                            counts.get("qualified", 0),
+                        ),
+                    )
     finally:
         conn.close()
 
