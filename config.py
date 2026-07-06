@@ -64,7 +64,7 @@ ISRAEL_KEYWORDS = [
 
 REMOTE_KEYWORDS = [
     "remote", "worldwide", "anywhere", "global",
-    "work from anywhere", "wfa", "distributed",
+    "work from anywhere", "wfa", "distributed", "emea",
 ]
 
 # Locations that explicitly restrict to regions other than Israel

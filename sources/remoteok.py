@@ -30,8 +30,13 @@ def fetch() -> list[dict]:
         if not isinstance(item, dict) or "position" not in item:
             continue
 
-        tags = item.get("tags") or []
-        location = ", ".join(item.get("location", []) or []) if isinstance(item.get("location"), list) else ""
+        raw_location = item.get("location")
+        if isinstance(raw_location, list):
+            location = ", ".join(str(part).strip() for part in raw_location if str(part).strip())
+        elif isinstance(raw_location, str):
+            location = raw_location.strip()
+        else:
+            location = ""
 
         jobs.append({
             "title": item.get("position", ""),

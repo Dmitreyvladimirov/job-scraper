@@ -12,7 +12,13 @@ import notion_client
 import telegram
 import sheets
 from sources import himalayas, weworkremotely, remotive, jobicy, remoteok, arbeitnow, telegram_channels
-from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
+from config import (
+    ATS_THRESHOLD,
+    COMPANY_COOLDOWN_DAYS,
+    MAX_GPT_CALLS_PER_RUN,
+    TELEGRAM_JOB_CHANNELS,
+    validate_secrets,
+)
 from utils import strip_html, enrich_url, normalize_job_key, fetch_jd_from_url, fetch_url_generic
 
 logging.basicConfig(
@@ -68,6 +74,7 @@ def run() -> None:
     validate_secrets()
     db.init_db()
     logger.info("=== Job Scraper started ===")
+    telegram_channels.check_config(TELEGRAM_JOB_CHANNELS, telegram.send_error)
     resume = load_resume()
 
     telegram_jobs, telegram_metrics = telegram_channels.fetch_with_metrics()

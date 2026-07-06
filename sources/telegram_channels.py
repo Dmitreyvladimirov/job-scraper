@@ -10,6 +10,7 @@ import requests
 from html import unescape
 from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,20 @@ def _clean_company(value: str) -> str:
     if not value or len(value) > 80 or _INVALID_COMPANY_RE.match(value):
         return ""
     return value
+
+
+def check_config(channels: list[str], send_alert: Callable[[str], None]) -> int:
+    """Report configured intake channels and alert if Telegram intake is disabled."""
+    configured_channels = len(channels)
+    logger.info("Telegram configured channels: %d", configured_channels)
+    if configured_channels == 0:
+        message = (
+            "TELEGRAM_JOB_CHANNELS is empty; Telegram job intake is disabled "
+            "(configured_channels=0)"
+        )
+        logger.error(message)
+        send_alert(message)
+    return configured_channels
 
 
 def _is_listing_page(url: str) -> bool:

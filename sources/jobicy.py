@@ -1,5 +1,6 @@
 import logging
 import requests
+from html import unescape
 from utils import retry
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ def fetch() -> list[dict]:
 
         jobs.append({
             "title": item.get("jobTitle", ""),
-            "company": item.get("companyName", ""),
+            "company": unescape(item.get("companyName", "") or ""),
             "url": item.get("url", ""),
             "description": item.get("jobDescription", ""),
             "location": item.get("jobGeo", ""),
