@@ -28,6 +28,10 @@ def _send(text: str) -> None:
 def send_run_summary(counts: dict, top_jobs: list[dict], source_counts: dict | None = None) -> None:
     """One message per scraper run — summary only, no per-vacancy spam."""
     qualified = counts["qualified"]
+    if qualified == 0:
+        logger.info("Telegram: summary skipped (0 qualified)")
+        return
+
     total = sum(counts.values())
     deduped = counts["dedup"]
     low_score = counts["score"]
@@ -36,30 +40,20 @@ def send_run_summary(counts: dict, top_jobs: list[dict], source_counts: dict | N
     if source_counts:
         sources_line = "📡 " + " | ".join(f"{n}: {c}" for n, c in source_counts.items()) + "\n"
 
-    if qualified == 0:
-        dashboard_link = f" | [Дашборд]({_DASHBOARD_URL})" if _DASHBOARD_URL else ""
-        text = (
-            f"🤖 Прогон завершён\n"
-            f"{sources_line}"
-            f"Новых вакансий не найдено "
-            f"(всего: {total}, дубликаты: {deduped}, низкий скор: {low_score})\n"
-            f"[Открыть Notion]({NOTION_DB_URL}){dashboard_link}"
-        )
-    else:
-        top_lines = ""
-        for j in top_jobs[:3]:
-            russia_flag = " 🇷🇺" if j.get("russia_warning") else ""
-            top_lines += f"• {j['title']} @ {j['company']} — {j['score']}/100{russia_flag}\n"
+    top_lines = ""
+    for j in top_jobs[:3]:
+        russia_flag = " 🇷🇺" if j.get("russia_warning") else ""
+        top_lines += f"• {j['title']} @ {j['company']} — {j['score']}/100{russia_flag}\n"
 
-        dashboard_link = f" | [Дашборд]({_DASHBOARD_URL})" if _DASHBOARD_URL else ""
-        text = (
-            f"🤖 *Прогон завершён*\n\n"
-            f"{sources_line}"
-            f"✅ Новых вакансий: *{qualified}*\n"
-            f"📊 Всего проверено: {total} | Дубликаты: {deduped} | Низкий скор: {low_score}\n\n"
-            f"{top_lines}"
-            f"\n[Открыть Notion]({NOTION_DB_URL}){dashboard_link}"
-        )
+    dashboard_link = f" | [Дашборд]({_DASHBOARD_URL})" if _DASHBOARD_URL else ""
+    text = (
+        f"🤖 *Прогон завершён*\n\n"
+        f"{sources_line}"
+        f"✅ Новых вакансий: *{qualified}*\n"
+        f"📊 Всего проверено: {total} | Дубликаты: {deduped} | Низкий скор: {low_score}\n\n"
+        f"{top_lines}"
+        f"\n[Открыть Notion]({NOTION_DB_URL}){dashboard_link}"
+    )
 
     try:
         _send(text)

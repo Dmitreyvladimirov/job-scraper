@@ -1,6 +1,8 @@
 """FastAPI dashboard — reads from Postgres and serves analytics charts."""
 import json
 import os
+from html import escape
+from urllib.parse import quote
 
 import psycopg2
 import psycopg2.extras
@@ -33,9 +35,15 @@ def _query(sql: str, params=()) -> list[dict]:
         conn.close()
 
 
+def _json_js(value) -> str:
+    """JSON for embedding inside a <script> block: escape < so scraped values
+    (source/company names) can't terminate the script tag or open new markup."""
+    return json.dumps(value).replace("<", "\\u003c")
+
+
 @app.get("/", response_class=HTMLResponse)
 def root(token: str = Query(default="")):
-    return HTMLResponse(f'<meta http-equiv="refresh" content="0;url=/dashboard?token={token}">')
+    return HTMLResponse(f'<meta http-equiv="refresh" content="0;url=/dashboard?token={quote(token, safe="")}">')
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -108,23 +116,23 @@ def dashboard(token: str = Query(default="")):
         GROUP BY company ORDER BY cnt DESC, top_score DESC LIMIT 10
     """)
 
-    # --- serialize for JS ---
-    daily_labels = json.dumps([str(r["day"]) for r in daily])
-    daily_qualified = json.dumps([r["qualified"] for r in daily])
-    daily_fetched = json.dumps([r["fetched"] for r in daily])
+    # --- serialize for JS (values come from scraped sources — treat as untrusted) ---
+    daily_labels = _json_js([str(r["day"]) for r in daily])
+    daily_qualified = _json_js([r["qualified"] for r in daily])
+    daily_fetched = _json_js([r["fetched"] for r in daily])
 
-    funnel_labels = json.dumps(["Qualified", "Low score", "Wrong role", "Location", "Stale", "Dedup", "GPT limit"])
-    funnel_values = json.dumps([
+    funnel_labels = _json_js(["Qualified", "Low score", "Wrong role", "Location", "Stale", "Dedup", "GPT limit"])
+    funnel_values = _json_js([
         funnel["qualified"] or 0, funnel["low_score"] or 0, funnel["role"] or 0,
         funnel["location"] or 0, funnel["stale"] or 0, funnel["dedup"] or 0, funnel["gpt_limit"] or 0,
     ])
 
-    src_labels = json.dumps([r["source"] for r in by_source])
-    src_qualified = json.dumps([r["qualified"] for r in by_source])
-    src_total = json.dumps([r["total"] for r in by_source])
+    src_labels = _json_js([r["source"] for r in by_source])
+    src_qualified = _json_js([r["qualified"] for r in by_source])
+    src_total = _json_js([r["total"] for r in by_source])
 
-    score_labels = json.dumps([r["bucket"] for r in score_dist])
-    score_values = json.dumps([r["cnt"] for r in score_dist])
+    score_labels = _json_js([r["bucket"] for r in score_dist])
+    score_values = _json_js([r["cnt"] for r in score_dist])
 
     # --- recent runs table rows ---
     rows_html = ""
@@ -132,7 +140,7 @@ def dashboard(token: str = Query(default="")):
         src = json.loads(r["sources_json"]) if r["sources_json"] else {}
         src_str = " · ".join(f"{k}: {v}" for k, v in src.items() if v)
         rows_html += f"""<tr>
-            <td>{str(r['started_at'])[:16]}</td>
+            <td>{escape(str(r['started_at'])[:16])}</td>
             <td>{r['total_fetched']}</td>
             <td class="green">{r['qualified']}</td>
             <td>{r['low_score']}</td>
@@ -140,11 +148,11 @@ def dashboard(token: str = Query(default="")):
             <td>{r['stale']}</td>
             <td>{r['dedup']}</td>
             <td>{r['gpt_calls']}</td>
-            <td class="small">{src_str}</td>
+            <td class="small">{escape(src_str)}</td>
         </tr>"""
 
     top_html = "".join(
-        f"<tr><td>{r['company']}</td><td class='green'>{r['cnt']}</td><td>{r['top_score']}</td></tr>"
+        f"<tr><td>{escape(r['company'])}</td><td class='green'>{r['cnt']}</td><td>{r['top_score']}</td></tr>"
         for r in top_companies
     )
 

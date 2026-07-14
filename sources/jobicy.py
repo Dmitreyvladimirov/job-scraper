@@ -26,12 +26,18 @@ def fetch() -> list[dict]:
         salary_max = item.get("jobSalaryMax", "")
         salary = f"${salary_min}–${salary_max}" if salary_min and salary_max else ""
 
+        # Every Jobicy listing is remote by construction, but jobGeo holds only the
+        # geo restriction ("USA", "Europe", "Anywhere") — without the "Remote" prefix
+        # passes_location_filter() rejected nearly all of them
+        geo = item.get("jobGeo", "")
+        location = f"Remote — {geo}" if geo else "Remote"
+
         jobs.append({
             "title": item.get("jobTitle", ""),
             "company": item.get("companyName", ""),
             "url": item.get("url", ""),
             "description": item.get("jobDescription", ""),
-            "location": item.get("jobGeo", ""),
+            "location": location,
             "salary": salary,
             "source": "Jobicy",
             "published": item.get("pubDate", "")[:10],

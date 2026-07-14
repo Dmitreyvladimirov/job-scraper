@@ -28,8 +28,10 @@ class ATSResult:
     penalty: int = 0
 
 
-def analyze(job: dict, resume_text: str) -> ATSResult:
-    """Score job against resume using explicit rubric. Returns structured analysis."""
+def analyze(job: dict, resume_text: str) -> ATSResult | None:
+    """Score job against resume using explicit rubric. Returns structured analysis,
+    or None when the analysis itself failed (network/parse error) — a failure must
+    not be conflated with a genuine low score, or the job gets permanently skipped."""
     prompt = f"""You are a strict ATS scorer. Score this job against the candidate's profile.
 
 CALIBRATION — read before scoring:
@@ -119,6 +121,9 @@ Reply with ONLY this JSON, no other text:
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 400,
         "temperature": 0,
+        # Force valid JSON — without this the model occasionally wraps the reply
+        # in markdown fences, which used to fail json.loads() below
+        "response_format": {"type": "json_object"},
     }).encode("utf-8")
 
     req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=payload)
@@ -164,4 +169,4 @@ Reply with ONLY this JSON, no other text:
         )
     except Exception as e:
         logger.error(f"ATS analysis failed for '{job['title']}': {e}")
-        return ATSResult(score=0, why_apply="", why_not="", matched=[], missed=[])
+        return None

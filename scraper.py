@@ -10,7 +10,10 @@ import db
 import notion_client
 import telegram
 import sheets
-from sources import himalayas, weworkremotely, remotive, jobicy, remoteok, arbeitnow, telegram_channels
+# Disabled 2026-07-14 after source audit (see SOURCES_DECISION.md): himalayas,
+# weworkremotely, remotive, remoteok, arbeitnow — API-side issues (ignored search
+# params / stale backlog), 21/174 qualified from ~19k rows. Files kept in sources/.
+from sources import jobicy, telegram_channels, jobgether
 from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
 from utils import strip_html, enrich_url, normalize_job_key, fetch_jd_from_url, fetch_url_generic
 
@@ -40,13 +43,9 @@ def run() -> None:
     resume = load_resume()
 
     sources_data = [
-        ("Himalayas",           himalayas.fetch()),
-        ("WeWorkRemotely",      weworkremotely.fetch()),
-        ("Remotive",            remotive.fetch()),
         ("Jobicy",              jobicy.fetch()),
-        ("RemoteOK",            remoteok.fetch()),
-        ("Arbeitnow",           arbeitnow.fetch()),
         ("TelegramChannels",    telegram_channels.fetch()),
+        ("Jobgether",           jobgether.fetch()),
     ]
     source_counts = {name: len(batch) for name, batch in sources_data}
     jobs = [j for _, batch in sources_data for j in batch]
@@ -100,7 +99,7 @@ def run() -> None:
     seen_keys |= notion_seen_keys
     company_history = notion_client.load_company_applications(COMPANY_COOLDOWN_DAYS)
 
-    counts = {"qualified": 0, "role": 0, "location": 0, "language": 0, "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0}
+    counts = {"qualified": 0, "role": 0, "location": 0, "language": 0, "stale": 0, "dedup": 0, "score": 0, "gpt_limit": 0, "ats_error": 0}
     top_jobs: list[dict] = []
     gpt_calls = 0
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
@@ -196,6 +195,15 @@ def run() -> None:
 
         result = ats.analyze(job, resume)
         gpt_calls += 1
+
+        # Analysis failure (network/parse) — do NOT mark as seen or rejected,
+        # so the job gets re-scored on the next run instead of being lost forever
+        if result is None:
+            counts["ats_error"] += 1
+            db.log_job(run_id, job, "ats_error")
+            logger.warning(f"  ⚠️ ATS error — will retry next run: {job['title']} @ {job['company']}")
+            continue
+
         logger.info(f"  {result.score:>3}/100  {job['title']} @ {job['company']}  [{job['source']}]")
 
         if result.score < ATS_THRESHOLD:
@@ -233,7 +241,7 @@ def run() -> None:
     logger.info(
         f"=== Done: {counts['qualified']} qualified | GPT calls: {gpt_calls}/{MAX_GPT_CALLS_PER_RUN} | "
         f"role:{counts['role']} language:{counts['language']} location:{counts['location']} "
-        f"stale:{counts['stale']} dedup:{counts['dedup']} low_score:{counts['score']} gpt_limit:{counts['gpt_limit']} ==="
+        f"stale:{counts['stale']} dedup:{counts['dedup']} low_score:{counts['score']} gpt_limit:{counts['gpt_limit']} ats_error:{counts['ats_error']} ==="
     )
 
 

@@ -82,10 +82,40 @@ def _secondary_offset(text: str) -> int:
     return len(text)
 
 
+# Generic post headers that are NOT the job title — some channels (e.g.
+# @remotejobss) put a banner line first and the actual title on line 2
+_HEADER_MARKERS = re.compile(
+    r"^(?:job opportunity|new job|new vacancy|vacancy|вакансия|новая вакансия|hiring)\W*$",
+    re.IGNORECASE,
+)
+
+# Explicit "Company: X" line (e.g. @remotejobss: "🏢 Company: Lively")
+_COMPANY_LINE = re.compile(r"^(?:company|компания)\s*[:—–-]\s*(.+)$", re.IGNORECASE)
+
+_LEADING_DECOR = re.compile(r"^[\U00010000-\U0010ffff☀-⟿⬀-⯿\s]+")
+
+
 def _extract_title_company(text: str) -> tuple[str, str]:
     lines = [l.strip() for l in text.split("\n") if l.strip()]
-    first_line = lines[0] if lines else ""
-    first_line = re.sub(r"^[\U00010000-\U0010ffff☀-⟿⬀-⯿\s]+", "", first_line)
+
+    # Scan the first few lines: skip banner headers, capture an explicit
+    # "Company:" line, and take the first remaining line as the title candidate
+    company_line = ""
+    candidates: list[str] = []
+    for line in lines[:6]:
+        line = _LEADING_DECOR.sub("", line)
+        if not line or _HEADER_MARKERS.match(line):
+            continue
+        m = _COMPANY_LINE.match(line)
+        if m:
+            if not company_line:
+                company_line = m.group(1).strip()
+            continue
+        candidates.append(line)
+
+    first_line = candidates[0] if candidates else (
+        _LEADING_DECOR.sub("", lines[0]) if lines else ""
+    )
     first_line_clean = re.sub(r"https?://\S+", "", first_line).strip().rstrip(":")
     for line in (first_line_clean, first_line):
         m = re.match(r"^(.+?)\s+в\s+(.+?)(?:\s*[:(—\-]|$)", line)
@@ -94,7 +124,7 @@ def _extract_title_company(text: str) -> tuple[str, str]:
         m = re.match(r"^(.+?)\s+(?:at|@)\s+(.+?)(?:\s*[:(—\-]|$)", line, re.IGNORECASE)
         if m:
             return m.group(1).strip(), m.group(2).strip()
-    return first_line_clean or first_line, ""
+    return first_line_clean or first_line, company_line
 
 
 def _extract_location(text: str) -> str:
