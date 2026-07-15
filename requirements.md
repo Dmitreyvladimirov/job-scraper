@@ -90,6 +90,12 @@ PostgreSQL и отправляет сводку в Telegram. Дополнен Fa
 - **REQ-103**: GitHub Actions `workflow_dispatch` shall передавать `DATABASE_URL` в шаг "Run scraper".
   - _Acceptance_: ручной запуск через `gh workflow run` завершается без `EnvironmentError` в `db.init_db()`.
   - _Источник_: SPEC.md v2.4.
+- **REQ-121**: `fetch_url_generic()` (`core/utils.py`) shall валидировать хост перед запросом — блокировать loopback/link-local (169.254.0.0/16)/RFC1918-private/ULA/0.0.0.0 адреса и нестандартные схемы, включая проверку на каждом редиректе.
+  - _Acceptance_: вызов на URL, резолвящийся в приватный/link-local IP (напр. `169.254.169.254`), не создаёт исходящий запрос; та же проверка применяется к `fetch_jd_from_url()` на нефиксированных хостах.
+  - _Источник_: автоматическая security-проверка 2026-07-15 (SSRF, HIGH) — URL приходят из спарсенных вакансий (Telegram-каналы, джоб-борды), потенциально из недоверенного источника.
+- **REQ-122**: `_check_token()` (`core/dashboard.py`) shall отклонять запросы, если `DASHBOARD_TOKEN` не задан, вместо fail-open поведения; сравнение токена shall использовать `hmac.compare_digest`.
+  - _Acceptance_: при незаданном `DASHBOARD_TOKEN` дашборд возвращает ошибку конфигурации (не 200) на всех защищённых эндпоинтах; таймингово-безопасное сравнение используется для валидного токена.
+  - _Источник_: автоматическая security-проверка 2026-07-15 (Authentication Bypass, MEDIUM) — пустой `DASHBOARD_TOKEN` сейчас открывает дашборд для всех без предупреждения.
 
 ### Telegram-парсинг (высокий приоритет)
 - **REQ-104**: `_extract_title_company()` shall извлекать компанию из multi-bullet сообщений (канал `forproducts`), где компания указана в отдельной строке ниже списка ролей.

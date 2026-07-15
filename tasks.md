@@ -25,6 +25,16 @@
   - _Output_: секрет добавлен в workflow env.
   - _Verify_: `gh workflow run` завершается без `EnvironmentError` в `db.init_db()`.
 
+- [ ] **TASK-024** [REQ-121]: SSRF-защита в `fetch_url_generic()` (`core/utils.py:218`) — резолвить хост через `socket.getaddrinfo`, блокировать loopback/link-local/RFC1918/ULA/`0.0.0.0`, ограничить схему `http`/`https`, `allow_redirects=False` + ре-валидация `Location` на каждом хопе. Тот же guard — на нефиксированные хосты в `fetch_jd_from_url()`.
+  - _Output_: helper-функция валидации хоста, применённая в обеих функциях.
+  - _Verify_: запрос на URL, резолвящийся в `169.254.169.254` (или другой приватный/link-local IP), не создаёт исходящий HTTP-запрос — тест с моком DNS-резолва.
+  - _Источник_: security review 2026-07-15, HIGH.
+
+- [ ] **TASK-025** [REQ-122]: убрать fail-open в `_check_token()` (`core/dashboard.py:23-24`) — при незаданном `DASHBOARD_TOKEN` отклонять запросы (500/503, не пропускать как сейчас), сравнение токена через `hmac.compare_digest`.
+  - _Output_: `_check_token()` требует непустой `TOKEN`; `validate_secrets()`/startup явно проверяет `DASHBOARD_TOKEN`.
+  - _Verify_: с пустым `DASHBOARD_TOKEN` защищённый эндпоинт возвращает ошибку конфигурации, а не 200; с валидным токеном сравнение идёт через `hmac.compare_digest`.
+  - _Источник_: security review 2026-07-15, MEDIUM.
+
 ---
 
 ## Phase 2: Telegram-парсинг (высокий приоритет — реальная потеря лидов)
