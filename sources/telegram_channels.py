@@ -99,11 +99,21 @@ def _extract_title_company(text: str) -> tuple[str, str]:
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
     # Scan the first few lines: skip banner headers, capture an explicit
-    # "Company:" line, and take the first remaining line as the title candidate
+    # "Company:" line or a "🏢 Company Name" line (e.g. @jobfoxil_product's
+    # 💼 title / 🏢 company / 📍 location field format), and take the first
+    # remaining line as the title candidate
     company_line = ""
     candidates: list[str] = []
-    for line in lines[:6]:
-        line = _LEADING_DECOR.sub("", line)
+    for raw_line in lines[:6]:
+        if raw_line.startswith("🏢") and not company_line:
+            stripped = _LEADING_DECOR.sub("", raw_line).strip()
+            # Still honor an explicit "Company: X" label after the emoji
+            # (e.g. @remotejobss: "🏢 Company: Lively") — else use the text as-is
+            # (e.g. @jobfoxil_product: "🏢 Check Point Software Technologies")
+            m = _COMPANY_LINE.match(stripped)
+            company_line = m.group(1).strip() if m else stripped
+            continue
+        line = _LEADING_DECOR.sub("", raw_line)
         if not line or _HEADER_MARKERS.match(line):
             continue
         m = _COMPANY_LINE.match(line)
@@ -130,7 +140,9 @@ def _extract_title_company(text: str) -> tuple[str, str]:
 def _extract_location(text: str) -> str:
     if re.search(r"удалённо|удаленно|remote|worldwide|из любой точки", text, re.IGNORECASE):
         return "remote"
-    m = re.search(r"📍\s*(.+?)(?:\n|$)", text)
+    # Stop at end of line OR at a following field marker (e.g. "📍 Tel Aviv   🎯 Mid"
+    # from @jobfoxil_product's single-line location+level format)
+    m = re.search(r"📍\s*(.+?)(?:\n|🎯|$)", text)
     if m:
         return m.group(1).strip()
     m = re.search(r"офис\s+в\s+(.+?)(?:[,\n]|$)", text, re.IGNORECASE)
@@ -139,7 +151,14 @@ def _extract_location(text: str) -> str:
     return ""
 
 
-def _pick_job_url(links: list[tuple[str, str]], text: str) -> str | None:
+def _pick_job_url(
+    links: list[tuple[str, str]], text: str, button_links: list[tuple[str, str]] | None = None,
+) -> str | None:
+    # Priority 0: Telegram inline keyboard "apply" button — the channel author's
+    # own explicit CTA, stronger signal than anything found inside the message text
+    for url, _display in button_links or []:
+        return url
+
     cutoff = _secondary_offset(text)
 
     # Build list of (url, display, position_in_text) — only links before secondary section
@@ -214,6 +233,20 @@ def _parse_messages(html: str) -> list[dict]:
             for a in text_el.find_all("a", href=True)
         ]
 
+        # Some channels (e.g. @jobfoxil_product) attach the apply link as a Telegram
+        # inline keyboard button rather than a link inside the message text — those
+        # buttons are siblings of text_el, not inside it, and their label ("View &
+        # apply →") never appears in the message body, so _pick_job_url's
+        # position-in-text heuristic can't place them. Collect separately and
+        # treat as the strongest possible signal (Telegram's own apply CTA).
+        button_links = [
+            (unescape(btn["href"]), btn.get_text(strip=True))
+            for btn in wrap.find_all(
+                "a", class_=lambda c: c and "tgme_widget_message_inline_button" in c.split()
+            )
+            if btn.get("href")
+        ]
+
         time_el = wrap.find("time", attrs={"datetime": True})
         published = ""
         if time_el:
@@ -232,6 +265,7 @@ def _parse_messages(html: str) -> list[dict]:
         messages.append({
             "text": text,
             "links": links,
+            "button_links": button_links,
             "published": published,
             "msg_id": msg_id,
         })
@@ -343,7 +377,7 @@ def _fetch_channel(channel: str, cutoff_date: datetime, max_pages: int = 5) -> l
             if not title or len(title) < 4:
                 continue
 
-            main_url = _pick_job_url(msg["links"], msg["text"])
+            main_url = _pick_job_url(msg["links"], msg["text"], msg.get("button_links"))
             tg_url = f"https://t.me/{slug}/{msg['msg_id']}" if msg.get("msg_id") else f"https://t.me/{slug}"
             source = f"Telegram:{slug}"
 
