@@ -9,3 +9,4 @@ test_gdocs.py
 get_google_token.py
 test_telegram.py
 jobs.db
+.DS_Store

@@ -1,10 +1,11 @@
 """One-off script: find Notion entries with RemoteOK/Arbeitnow URLs and replace with direct apply URLs."""
 import logging
 import sys
+from pathlib import Path
 
 import requests
 
-sys.path.insert(0, ".")
+sys.path.insert(0, str(Path(__file__).parent.parent / "core"))
 from config import NOTION_TOKEN, NOTION_DATABASE_ID
 from utils import find_apply_url
 

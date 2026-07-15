@@ -6,7 +6,10 @@ Run once before using the Telegram channel source:
     .venv/bin/python3 setup_telegram.py
 """
 import asyncio
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "core"))
 
 
 async def main() -> None:
