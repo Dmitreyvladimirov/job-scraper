@@ -96,6 +96,9 @@ PostgreSQL и отправляет сводку в Telegram. Дополнен Fa
 - **REQ-122**: `_check_token()` (`core/dashboard.py`) shall отклонять запросы, если `DASHBOARD_TOKEN` не задан, вместо fail-open поведения; сравнение токена shall использовать `hmac.compare_digest`.
   - _Acceptance_: при незаданном `DASHBOARD_TOKEN` дашборд возвращает ошибку конфигурации (не 200) на всех защищённых эндпоинтах; таймингово-безопасное сравнение используется для валидного токена.
   - _Источник_: автоматическая security-проверка 2026-07-15 (Authentication Bypass, MEDIUM) — пустой `DASHBOARD_TOKEN` сейчас открывает дашборд для всех без предупреждения.
+- **REQ-123**: `ats.analyze()`'s LOCATION sub-score (0–15) shall reliably score down/reject roles restricted to a single non-eligible country/region or requiring on-site/hybrid presence, instead of defaulting to 15/15 whenever the JD merely contains the word "remote".
+  - _Acceptance_: JD text containing an explicit residency/work-authorization restriction (e.g. "must be based in the US", "hybrid role in Vista, CA", "U.S. Citizen required") scores LOCATION ≤8, not 15; the model's output includes a short quoted justification (`location_reason`) so the score is auditable in the Notion callout.
+  - _Источник_: ручной аудит 2026-07-29 (Notion audit сессия) — из 277 карточек в статусе "Активно"/`Scraped`, минимум ~60 получили ложный LOCATION=15/15 несмотря на явные US-only/single-country/onsite ограничения в тексте вакансии (напр. Reddit, HubSpot, Danaher — Vista CA onsite, Raytheon — hybrid + US citizenship, ASAAS/RD Station — Brazil-only, EZCORP — Guatemala-only). Частичный черновик фикса уже был начат в рабочей копии `core/ats.py` (не закоммичен) до этого REQ.
 
 ### Telegram-парсинг (высокий приоритет)
 - **REQ-104**: `_extract_title_company()` shall извлекать компанию из multi-bullet сообщений (канал `forproducts`), где компания указана в отдельной строке ниже списка ролей.

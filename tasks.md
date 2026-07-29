@@ -35,6 +35,11 @@
   - _Verify_: с пустым `DASHBOARD_TOKEN` защищённый эндпоинт возвращает ошибку конфигурации, а не 200; с валидным токеном сравнение идёт через `hmac.compare_digest`.
   - _Источник_: security review 2026-07-15, MEDIUM.
 
+- [ ] **TASK-026** [REQ-123]: LOCATION sub-score в `ats.analyze()` (`core/ats.py`) ненадёжен — модель ставит 15/15 почти всегда, когда в JD встречается слово "remote", даже при явном US-only/single-country/onsite ограничении. Добавить в промпт: явную проверку on-site/hybrid (не только residency), поле `location_reason` (короткая цитата/обоснование из JD) в JSON-схему и `ATSResult`, прокинуть `location_reason` в callout карточки в `notion_client.py` (аналогично `why_apply`/`why_not`) для аудируемости.
+  - _Output_: обновлённый промпт + `location_reason` в `ATSResult` и в Notion callout.
+  - _Verify_: тестовые JD с "must be based in the US" / "hybrid role in Vista, CA" / "U.S. Citizen required" получают LOCATION ≤8 с непустым `location_reason`, а не 15.
+  - _Источник_: ручной аудит 2026-07-29 — ~60+ ложных LOCATION=15/15 из 277 проверенных карточек.
+
 ---
 
 ## Phase 2: Telegram-парсинг (высокий приоритет — реальная потеря лидов)

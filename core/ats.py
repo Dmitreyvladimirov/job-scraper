@@ -92,12 +92,18 @@ SCORING RUBRIC — sum all four dimensions, then apply penalty if triggered:
    Map raw total → 0–25 scale (max raw ≈ 28 → 25 pts cap)
 
 4. LOCATION (0–15) — read the full JD, not just a "Remote" headline:
-   Many listings say "Remote" but actually restrict eligibility to residents/citizens of one
-   country or region (e.g. "remote, must be based in the US", "must be authorized to work in
-   Germany", "this is a UK-based remote role", "candidates must reside in France"). If ANY such
-   residency/work-authorization restriction is stated anywhere in the JD, score LOCATION based on
-   that restricted country/region below — do NOT give 15 just because the word "remote" appears.
-   Treat any of the following as an equally strong signal, even with no explicit residency wording:
+   Many listings say "Remote" or "Full Remote job" but actually restrict eligibility to
+   residents/citizens of one country or region. Treat ALL of the following as an authoritative
+   restriction — score LOCATION based on the named country/region, NOT 15, regardless of any
+   "Remote"/"Full Remote job" boilerplate elsewhere in the text:
+     - Explicit residency/work-authorization wording: "must be based in the US", "must be
+       authorized to work in Germany", "this is a UK-based remote role", "candidates must
+       reside in France"
+     - Aggregator boilerplate naming a single country, e.g. "the offer is available from:
+       <country>", "hiring only in <country>", "open to candidates in <country>", "Remote
+       Position: false" — this is a literal per-posting country field, not a stylistic remark;
+       whatever country/region follows it is the actual restriction, even if the same JD also
+       says "Full Remote job" or "Remote" elsewhere
      - "U.S. Citizen required", "eVerify participant", active security clearance requirement
        (all imply onsite/US-only eligibility)
      - On-site/hybrid role type stated directly — "Position Role Type: Hybrid", "on-site",
@@ -106,12 +112,16 @@ SCORING RUBRIC — sum all four dimensions, then apply penalty if triggered:
    country/region were the residency restriction (0, or 8 if the office is in EMEA) — UNLESS the
    office is in Israel, in which case score 15 (candidate is Tel Aviv-based, so an Israel-based
    on-site/hybrid role is fine).
-   When uncertain whether a restriction applies, re-read the JD once before deciding; do not
-   default to 15.
+   Before writing location_reason, explicitly scan the JD for the phrase "available from",
+   "offer is available", or any single named country/region — if found, that is the restriction;
+   do not default to 15 just because "remote" also appears. When still uncertain, re-read the JD
+   once before deciding; do not default to 15.
    Remote with NO country/region restriction (genuinely worldwide) OR Israel-based (remote,
    on-site, or hybrid) = 15
    Restricted to Europe / EMEA (residency OR on-site/hybrid office) = 8
+     e.g. "offer available from: Germany/France/Poland/UK/Portugal/UAE/etc." → 8, not 0
    Restricted to US only / LATAM / APAC only (residency OR on-site/hybrid office) = 0
+     e.g. "offer available from: United States/Canada/Brazil/India/Philippines/etc." → 0
    Russia-based (company office or HQ in Russia) = 0
 
 HARD REQUIREMENT PENALTY: −15 (applied to final total, floor at 0)
