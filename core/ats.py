@@ -25,6 +25,7 @@ class ATSResult:
     domain_exp_score: int = 0
     keyword_score: int = 0
     location_score: int = 0
+    location_reason: str = ""
     penalty: int = 0
 
 
@@ -90,10 +91,28 @@ SCORING RUBRIC — sum all four dimensions, then apply penalty if triggered:
    Nice to Have: ✅ full match = 1 pt | ⚠️ partial = 0.5 pts | ❌ not covered = 0 pts
    Map raw total → 0–25 scale (max raw ≈ 28 → 25 pts cap)
 
-4. LOCATION (0–15):
-   Remote worldwide OR Israel-based = 15
-   Europe / EMEA = 8
-   US only / LATAM / APAC only = 0
+4. LOCATION (0–15) — read the full JD, not just a "Remote" headline:
+   Many listings say "Remote" but actually restrict eligibility to residents/citizens of one
+   country or region (e.g. "remote, must be based in the US", "must be authorized to work in
+   Germany", "this is a UK-based remote role", "candidates must reside in France"). If ANY such
+   residency/work-authorization restriction is stated anywhere in the JD, score LOCATION based on
+   that restricted country/region below — do NOT give 15 just because the word "remote" appears.
+   Treat any of the following as an equally strong signal, even with no explicit residency wording:
+     - "U.S. Citizen required", "eVerify participant", active security clearance requirement
+       (all imply onsite/US-only eligibility)
+     - On-site/hybrid role type stated directly — "Position Role Type: Hybrid", "on-site",
+       "in-office", or a named specific office city/location with no remote option offered
+   For an on-site/hybrid role tied to a specific office, score LOCATION as if that office's
+   country/region were the residency restriction (0, or 8 if the office is in EMEA) — UNLESS the
+   office is in Israel, in which case score 15 (candidate is Tel Aviv-based, so an Israel-based
+   on-site/hybrid role is fine).
+   When uncertain whether a restriction applies, re-read the JD once before deciding; do not
+   default to 15.
+   Remote with NO country/region restriction (genuinely worldwide) OR Israel-based (remote,
+   on-site, or hybrid) = 15
+   Restricted to Europe / EMEA (residency OR on-site/hybrid office) = 8
+   Restricted to US only / LATAM / APAC only (residency OR on-site/hybrid office) = 0
+   Russia-based (company office or HQ in Russia) = 0
 
 HARD REQUIREMENT PENALTY: −15 (applied to final total, floor at 0)
 Apply ONLY when ALL three are true:
@@ -108,6 +127,7 @@ Reply with ONLY this JSON, no other text:
   "domain_exp_score": <0-15>,
   "keyword_score": <0-25>,
   "location_score": <0-15>,
+  "location_reason": "<REQUIRED. <20 words: quote or paraphrase the specific JD text that justifies the location_score (residency/citizenship/clearance requirement, or the on-site/hybrid office location). If scoring 15, write 'no restriction found — worldwide/Israel'.>",
   "penalty": <0 or 15>,
   "domain": "<detected domain: AI/ML | B2B SaaS | Cybersecurity | FinTech | EdTech | Data/Analytics | Growth/Consumer | Other>",
   "why_apply": "<one sentence: strongest reason to apply>",
@@ -143,6 +163,7 @@ Reply with ONLY this JSON, no other text:
         domain_score       = min(30, domain_value_score + domain_exp_score)
         keyword_score      = min(25, max(0, int(parsed.get("keyword_score", 0))))
         location_score     = min(15, max(0, int(parsed.get("location_score", 0))))
+        location_reason    = parsed.get("location_reason", "") or ""
         penalty            = 15 if int(parsed.get("penalty", 0)) > 0 else 0
 
         score = max(0, role_score + domain_score + keyword_score + location_score - penalty)
@@ -165,6 +186,7 @@ Reply with ONLY this JSON, no other text:
             domain_exp_score=domain_exp_score,
             keyword_score=keyword_score,
             location_score=location_score,
+            location_reason=location_reason,
             penalty=penalty,
         )
     except Exception as e:

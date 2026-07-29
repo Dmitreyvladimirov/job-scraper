@@ -134,8 +134,6 @@ def _make_properties(job: dict, status2: str, status: str, score: int | None = N
         props["Компания"] = {"rich_text": [{"text": {"content": company[:255]}}]}
     if score is not None:
         props["ATS Score"] = {"number": score}
-    if job.get("russia_warning"):
-        props["Тип вакансии"] = {"select": {"name": "🇷🇺 Russia"}}
     return props
 
 
@@ -196,7 +194,8 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url:
     children = [
         _callout(
             f"ATS Score: {result.score}/100  |  {result.domain or '—'}  |  Зарплата: {salary}  |  {job['source']}{penalty_str}\n"
-            f"Role: {result.role_score}/30  |  Domain: {result.domain_score}/30 (Value: {result.domain_value_score}/15 · Exp: {result.domain_exp_score}/15)  |  Keywords: {result.keyword_score}/25  |  Location: {result.location_score}/15",
+            f"Role: {result.role_score}/30  |  Domain: {result.domain_score}/30 (Value: {result.domain_value_score}/15 · Exp: {result.domain_exp_score}/15)  |  Keywords: {result.keyword_score}/25  |  Location: {result.location_score}/15\n"
+            f"Location reason: {result.location_reason or '—'}",
             "⭐"
         ),
         _text_block(f"✅ Стоит рассмотреть: {result.why_apply}") if result.why_apply else _text_block(""),
@@ -204,12 +203,6 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url:
         _text_block(f"🔑 Совпало: {matched_str}"),
         _text_block(f"🎯 Не хватает: {missed_str}"),
     ]
-
-    if job.get("russia_warning"):
-        children.append(_callout(
-            "🇷🇺 Компания или офис в России — проверь условия перед откликом.",
-            "🇷🇺"
-        ))
 
     if job.get("incomplete_description"):
         children.append(_callout(
@@ -241,6 +234,11 @@ def create_entry(job: dict, result, cooldown_match: dict | None = None, doc_url:
     # Full JD in a toggle
     description = job.get("description", "")
     if description:
+        # Property rich_text objects use {"text": {...}} (no "type": "text"),
+        # unlike block-level rich_text which requires it — mirrors "Компания" above.
+        props["Job description"] = {
+            "rich_text": [{"text": {"content": chunk}} for chunk in _split_for_notion(description[:10000])]
+        }
         jd_children = [
             _text_block(chunk)
             for chunk in _split_for_notion(description[:10000])
