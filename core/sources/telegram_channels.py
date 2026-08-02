@@ -134,7 +134,32 @@ def _extract_title_company(text: str) -> tuple[str, str]:
         m = re.match(r"^(.+?)\s+(?:at|@)\s+(.+?)(?:\s*[:(—\-]|$)", line, re.IGNORECASE)
         if m:
             return m.group(1).strip(), m.group(2).strip()
-    return first_line_clean or first_line, company_line
+
+    title = first_line_clean or first_line
+
+    # Company introduced on the line right after the title, not the same line
+    # (e.g. @forproducts: "Title\nв Company — description"). Only the current
+    # channel's live format as of 2026-08-02 — the historical "multi-bullet list,
+    # company below" shape this covered originally no longer appears on that channel.
+    if not company_line and len(candidates) > 1:
+        m = re.match(r"^в\s+(.+?)(?:\s*[—\-:]|$)", candidates[1])
+        if not m:
+            m = re.match(r"^(?:at|@)\s+(.+?)(?:\s*[—\-:]|$)", candidates[1], re.IGNORECASE)
+        if m:
+            company_line = m.group(1).strip()
+
+    # Trailing "(Company)" suffix on the title itself (e.g. @smartremotejobs:
+    # "FX & Treasury Ops Manager (Windranger Labs)"). Skip common non-company
+    # qualifiers so "PM (Remote)" / "PM (Hybrid)" don't get split as if they were one.
+    if not company_line:
+        m = re.match(r"^(.+?)\s*\(([^()]+)\)\s*$", title)
+        if m and m.group(2).strip().lower() not in {
+            "remote", "hybrid", "onsite", "on-site", "full-time", "part-time",
+            "contract", "удалённо", "удаленно", "гибрид",
+        }:
+            title, company_line = m.group(1).strip(), m.group(2).strip()
+
+    return title, company_line
 
 
 def _extract_location(text: str) -> str:
@@ -384,7 +409,12 @@ def _fetch_channel(channel: str, cutoff_date: datetime, max_pages: int = 5) -> l
             # If the only URL found is a listing page, expand it into individual roles
             if not main_url:
                 listing_url = next(
-                    (url for url, _ in msg["links"] if _is_listing_page(url) and "t.me/" not in url),
+                    (
+                        url for url, _ in msg["links"]
+                        if _is_listing_page(url)
+                        and "t.me/" not in url
+                        and not any(pat in url.lower() for pat in _SKIP_URL_PATTERNS)
+                    ),
                     None,
                 )
                 if listing_url:

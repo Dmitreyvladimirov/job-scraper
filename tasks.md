@@ -54,22 +54,26 @@
 ## Phase 2: Telegram-парсинг (высокий приоритет — реальная потеря лидов)
 *Goal*: удвоить полезный выход Telegram-источников, чиня конкретные каналы, найденные аудитом 2026-07-02.
 
-- [ ] **TASK-004** [REQ-104]: в `_extract_title_company()` (`sources/telegram_channels.py`) добавить извлечение компании из multi-bullet формата (канал `forproducts`) — компания на отдельной строке ниже списка ролей.
+- [x] **TASK-004** [REQ-104]: в `_extract_title_company()` (`sources/telegram_channels.py`) добавить извлечение компании из multi-bullet формата (канал `forproducts`) — компания на отдельной строке ниже списка ролей.
   - _Output_: `forproducts` даёт непустую компанию для каждой роли в списке.
   - _Verify_: прогнать `_fetch_channel('forproducts', ...)` на реальных сохранённых сообщениях, company не пустая.
+  - _Решение (2026-08-02)_: формат канала успел смениться с "multi-bullet список + компания ниже" (историческое описание бага) на "Title\nв Company — описание" (по одной вакансии на сообщение) — проверено вживую 2026-08-02. Добавлен фолбэк: если company не найдена на первой строке, вторая строка-кандидат проверяется на `^в\s+X` / `^(?:at|@)\s+X`. Живой тест на 20 текущих сообщениях канала: было 15/20 пустых company, стало 7/20 (остаток — сообщения без явного маркера компании вообще, напр. английские посты вида "AI Product Engineer\nRyze AI is an AI marketing agent..." — компания не размечена никаким паттерном, не наш случай).
 
-- [ ] **TASK-005** [REQ-105]: распознать лейблированный формат `🏢 Company: X` (канал `remotejobss`) — title со строки роли (не первой generic-строки), company после "Company:".
+- [x] **TASK-005** [REQ-105]: распознать лейблированный формат `🏢 Company: X` (канал `remotejobss`) — title со строки роли (не первой generic-строки), company после "Company:".
   - _Output_: `remotejobss` даёт осмысленный title (не "JOB OPPORTUNITY") и корректную компанию.
   - _Verify_: прогнать `_fetch_channel('remotejobss', ...)`, title/company совпадают с реальным текстом сообщения.
+  - _Решение_: уже был реализован раньше (см. `_COMPANY_LINE`/`🏢`-ветка в `_extract_title_company()`, код прямо ссылается на `@remotejobss` в комментарии) — не найдено, когда именно это было починено, задача просто не была отмечена. Перепроверено вживую 2026-08-02 на 20 текущих сообщениях канала — 19/20 дают корректные title+company, 1/20 — непрофильное промо-сообщение без вакансии.
 
-- [ ] **TASK-006** [REQ-106]: отделять суффикс "(Компания)" от title (`smartremotejobs`, `productjobgo`).
+- [x] **TASK-006** [REQ-106]: отделять суффикс "(Компания)" от title (`smartremotejobs`, `productjobgo`).
   - _Output_: title "Senior PM (CyberNut)" → title="Senior PM", company="CyberNut".
   - _Verify_: unit-тест на строке с суффиксом в скобках.
+  - _Решение (2026-08-02)_: добавлен фолбэк в конце `_extract_title_company()` — если company всё ещё не найдена, ловит `^(.+?)\s*\(([^()]+)\)\s*$` на title, с исключением частых не-компаний в скобках (remote/hybrid/onsite/contract и рус. эквиваленты), чтобы не спутать "PM (Remote)" с компанией. Живой тест на `smartremotejobs`: "FX & Treasury Ops Manager (Windranger Labs)" → title="FX & Treasury Ops Manager", company="Windranger Labs" — сработало на всех 3 вхождениях этой вакансии в текущей выдаче канала. На `productjobgo` в текущей живой выборке не встретилось ни одного сообщения именно в этом формате (остальные пустые company там — другие, неописанные в этой задаче форматы, вне скоупа).
 
-- [ ] **TASK-023** [REQ-120]: `_expand_listing_page()` — в `_fetch_channel()` (`sources/telegram_channels.py:386-387`), при выборе `listing_url` фильтровать по `_SKIP_URL_PATTERNS`, не только `_is_listing_page()`.
+- [x] **TASK-023** [REQ-120]: `_expand_listing_page()` — в `_fetch_channel()` (`sources/telegram_channels.py:386-387`), при выборе `listing_url` фильтровать по `_SKIP_URL_PATTERNS`, не только `_is_listing_page()`.
   - _Output_: `listing_url = next((url for url, _ in msg["links"] if _is_listing_page(url) and "t.me/" not in url and not any(p in url.lower() for p in _SKIP_URL_PATTERNS)), None)` (или эквивалент).
   - _Verify_: regression-тест на сообщении, где единственная listing-ссылка — `linkedin.com/company/x/jobs/`: `_expand_listing_page()` не вызывается, `company`/`description` не содержат текста LinkedIn auth-wall.
   - _Доп. проверка_: пройтись по уже существующим Postgres-записям с `company IS NULL` или `company ILIKE '%linkedin%'` — оценить масштаб уже накопленного мусора (69+27 на момент находки 2026-07-15), решить отдельно, чистить ли задним числом.
+  - _Решение (2026-08-02)_: применён ровно предложенный в задаче фикс. Синтетический regression-тест (живого сообщения с этим паттерном на момент фикса не нашлось): `linkedin.com/company/acme/jobs/` как единственная listing-ссылка → `listing_url=None`, легитимная `ursastar.us/careers` по-прежнему проходит. Доп. проверка по Postgres не сделана — нет доступа к живой БД Railway из этой сессии.
 
 ---
 
