@@ -1,4 +1,5 @@
 """FastAPI dashboard — reads from Postgres and serves analytics charts."""
+import hmac
 import json
 import os
 from html import escape
@@ -15,13 +16,25 @@ TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
 app = FastAPI()
 
 
+@app.on_event("startup")
+def _validate_config() -> None:
+    # Fail fast rather than silently serving an unauthenticated dashboard — matches
+    # config.validate_secrets()'s fail-fast philosophy for the scraper service.
+    if not TOKEN:
+        raise RuntimeError("DASHBOARD_TOKEN is not set — refusing to start with an unauthenticated dashboard")
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
 def _check_token(token: str):
-    if TOKEN and token != TOKEN:
+    if not TOKEN:
+        # Belt-and-suspenders: startup should already have refused to boot without a
+        # token, but never fail open on a protected endpoint if it somehow got here.
+        raise HTTPException(status_code=503, detail="Dashboard misconfigured: DASHBOARD_TOKEN not set")
+    if not hmac.compare_digest(token, TOKEN):
         raise HTTPException(status_code=403, detail="Invalid token")
 
 

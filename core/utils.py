@@ -1,9 +1,12 @@
+import ipaddress
 import re
+import socket
 import time
 import logging
 import requests
 from html import unescape
 from html.parser import HTMLParser
+from urllib.parse import urljoin, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,66 @@ def strip_html(text: str) -> str:
     except Exception:
         result = re.sub(r"<[^>]+>", " ", text)
     return re.sub(r"\s+", " ", result).strip()
+
+
+_ALLOWED_SCHEMES = ("http", "https")
+
+
+def _is_safe_host(hostname: str) -> bool:
+    """SSRF guard: reject hosts that resolve to loopback/link-local/private/reserved
+    addresses (RFC1918, ULA, 169.254.0.0/16, 0.0.0.0, etc.) — scraped URLs (Telegram
+    messages, aggregator listings) are untrusted input. Blocks by IP, not by name, so
+    it can't be bypassed with a hostname that merely *contains* a safe-looking substring."""
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if ip.is_loopback or ip.is_link_local or ip.is_private or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            return False
+    return True
+
+
+def _validate_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    return parsed.scheme in _ALLOWED_SCHEMES and bool(parsed.hostname) and _is_safe_host(parsed.hostname)
+
+
+def _url_host_matches(url: str, hosts: tuple[str, ...]) -> bool:
+    """True if url's actual hostname is one of `hosts` (or a subdomain of one) — unlike a
+    raw substring check, this can't be fooled by e.g. 'evil.com/remoteworldwide.net' or
+    'remoteworldwide.net.evil.com'."""
+    try:
+        hostname = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    return any(hostname == h or hostname.endswith("." + h) for h in hosts)
+
+
+def _safe_get(url: str, **kwargs):
+    """requests.get() with an SSRF guard: validates the host before the initial request,
+    then follows redirects manually (allow_redirects=False) re-validating the target host
+    on every hop, instead of trusting requests to follow a redirect chain unchecked."""
+    kwargs.pop("allow_redirects", None)
+    for _ in range(5):
+        if not _validate_url(url):
+            raise ValueError(f"Blocked unsafe URL: {url}")
+        resp = requests.get(url, allow_redirects=False, **kwargs)
+        if resp.is_redirect or resp.is_permanent_redirect:
+            location = resp.headers.get("Location")
+            if not location:
+                return resp
+            url = urljoin(url, location)
+            continue
+        return resp
+    raise ValueError(f"Too many redirects for {url}")
 
 
 _PLATFORM_HOSTS = ("remoteok.com", "arbeitnow.com", "weworkremotely.com", "jobgether.com", "jobicy.com")
@@ -88,7 +151,7 @@ def _page_title(url: str) -> str:
     """Best-effort <title> text of a job-board page — used as a weak company-name signal
     for ATS platforms (Lever, Ashby) whose posting APIs don't return an org name field."""
     try:
-        r = requests.get(url, timeout=5, headers=_GENERIC_HEADERS)
+        r = _safe_get(url, timeout=5, headers=_GENERIC_HEADERS)
         if r.status_code == 200:
             m = re.search(r"<title>(.*?)</title>", r.text, re.I | re.S)
             if m:
@@ -228,7 +291,7 @@ def _extract_direct_anchor(url: str) -> str | None:
     aggregators (currently remoteworldwide.net) that embed the true apply href directly,
     rather than requiring a Greenhouse/Lever/Ashby name-guess."""
     try:
-        r = requests.get(url, timeout=8, headers=_GENERIC_HEADERS)
+        r = _safe_get(url, timeout=8, headers=_GENERIC_HEADERS)
         if r.status_code != 200:
             return None
         idx = r.text.find("Apply Now")
@@ -247,16 +310,16 @@ def _extract_direct_anchor(url: str) -> str | None:
 
 def enrich_url(job: dict) -> None:
     """If job URL is a job-platform page, try to find the company's direct apply URL."""
-    url = job.get("url", "").lower()
+    url = job.get("url", "")
 
-    if any(h in url for h in _DIRECT_ANCHOR_HOSTS):
-        direct = _extract_direct_anchor(job["url"])
+    if _url_host_matches(url, _DIRECT_ANCHOR_HOSTS):
+        direct = _extract_direct_anchor(url)
         if direct:
             job["apply_url"] = direct
             logger.info(f"URL enriched (direct anchor): {job['company']} → {direct}")
         return
 
-    if not any(h in url for h in _PLATFORM_HOSTS):
+    if not _url_host_matches(url, _PLATFORM_HOSTS):
         return
     direct = find_apply_url(job.get("company", ""), job.get("title", ""))
     if direct:
@@ -282,7 +345,7 @@ def fetch_url_generic(url: str, max_chars: int = 6000) -> str:
     if not url:
         return ""
     try:
-        resp = requests.get(url, headers=_GENERIC_HEADERS, timeout=12, allow_redirects=True)
+        resp = _safe_get(url, headers=_GENERIC_HEADERS, timeout=12)
         resp.raise_for_status()
         content_type = resp.headers.get("content-type", "")
         if "text/html" not in content_type and "text/plain" not in content_type:

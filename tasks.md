@@ -32,15 +32,17 @@
   - _Output_: секрет добавлен в workflow env.
   - _Verify_: `gh workflow run` завершается без `EnvironmentError` в `db.init_db()`.
 
-- [ ] **TASK-024** [REQ-121]: SSRF-защита в `fetch_url_generic()` (`core/utils.py:218`) — резолвить хост через `socket.getaddrinfo`, блокировать loopback/link-local/RFC1918/ULA/`0.0.0.0`, ограничить схему `http`/`https`, `allow_redirects=False` + ре-валидация `Location` на каждом хопе. Тот же guard — на нефиксированные хосты в `fetch_jd_from_url()`.
+- [x] **TASK-024** [REQ-121]: SSRF-защита в `fetch_url_generic()` (`core/utils.py:218`) — резолвить хост через `socket.getaddrinfo`, блокировать loopback/link-local/RFC1918/ULA/`0.0.0.0`, ограничить схему `http`/`https`, `allow_redirects=False` + ре-валидация `Location` на каждом хопе. Тот же guard — на нефиксированные хосты в `fetch_jd_from_url()`.
   - _Output_: helper-функция валидации хоста, применённая в обеих функциях.
   - _Verify_: запрос на URL, резолвящийся в `169.254.169.254` (или другой приватный/link-local IP), не создаёт исходящий HTTP-запрос — тест с моком DNS-резолва.
   - _Источник_: security review 2026-07-15, HIGH.
+  - _Решение (2026-08-02)_: добавлены `_is_safe_host()`/`_validate_url()`/`_safe_get()` в `utils.py` — резолвит хост через `socket.getaddrinfo`, блокирует loopback/link-local/private/reserved/multicast по IP (не по имени хоста — не обходится подстрокой в имени). `_safe_get()` вручную идёт по редиректам (`allow_redirects=False`) с ре-валидацией на каждом хопе. Применено в `fetch_url_generic()` и в новых `_extract_direct_anchor()`/`_page_title()` (добавлены в этой же сессии для TASK-027). `fetch_jd_from_url()` не тронут — там хост всегда захардкожен (`api.lever.co`/`boards-api.greenhouse.io`/`api.ashbyhq.com`), input используется только как path-параметр, SSRF-поверхности там нет. Живой тест: `169.254.169.254`/`127.0.0.1`/`localhost`/`10.0.0.5`/`ftp://` — заблокированы; `https://example.com` и редирект-цепочка на публичный хост — проходят; редирект на `169.254.169.254` — заблокирован на хопе.
 
-- [ ] **TASK-025** [REQ-122]: убрать fail-open в `_check_token()` (`core/dashboard.py:23-24`) — при незаданном `DASHBOARD_TOKEN` отклонять запросы (500/503, не пропускать как сейчас), сравнение токена через `hmac.compare_digest`.
+- [x] **TASK-025** [REQ-122]: убрать fail-open в `_check_token()` (`core/dashboard.py:23-24`) — при незаданном `DASHBOARD_TOKEN` отклонять запросы (500/503, не пропускать как сейчас), сравнение токена через `hmac.compare_digest`.
   - _Output_: `_check_token()` требует непустой `TOKEN`; `validate_secrets()`/startup явно проверяет `DASHBOARD_TOKEN`.
   - _Verify_: с пустым `DASHBOARD_TOKEN` защищённый эндпоинт возвращает ошибку конфигурации, а не 200; с валидным токеном сравнение идёт через `hmac.compare_digest`.
   - _Источник_: security review 2026-07-15, MEDIUM.
+  - _Решение (2026-08-02)_: `@app.on_event("startup")` теперь падает с `RuntimeError`, если `DASHBOARD_TOKEN` не задан (fail fast при деплое); `_check_token()` дополнительно (belt-and-suspenders) возвращает 503 при пустом `TOKEN` вместо пропуска, сравнение через `hmac.compare_digest`. Протестировано: пустой/неверный токен → 403 или 503, верный → пропускает.
 
 - [ ] **TASK-026** [REQ-123]: LOCATION sub-score в `ats.analyze()` (`core/ats.py`) ненадёжен — модель ставит 15/15 почти всегда, когда в JD встречается слово "remote", даже при явном US-only/single-country/onsite ограничении. Добавить в промпт: явную проверку on-site/hybrid (не только residency), поле `location_reason` (короткая цитата/обоснование из JD) в JSON-схему и `ATSResult`, прокинуть `location_reason` в callout карточки в `notion_client.py` (аналогично `why_apply`/`why_not`) для аудируемости.
   - _Output_: обновлённый промпт + `location_reason` в `ATSResult` и в Notion callout.
