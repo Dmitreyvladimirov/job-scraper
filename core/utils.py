@@ -308,6 +308,72 @@ def _extract_direct_anchor(url: str) -> str | None:
     return None
 
 
+def _fetch_via_scrapingbee(url: str, render_js: bool = True) -> str:
+    """Fetch a page through ScrapingBee (bypasses Cloudflare, renders JS) — costs
+    credits, so only used as a fallback when the free find_apply_url() name-guess
+    comes up empty. Requires SCRAPINGBEE_API_KEY; returns "" if unset or on failure."""
+    from config import SCRAPINGBEE_API_KEY
+    if not SCRAPINGBEE_API_KEY:
+        return ""
+    try:
+        r = requests.get(
+            "https://app.scrapingbee.com/api/v1/",
+            params={"api_key": SCRAPINGBEE_API_KEY, "url": url, "render_js": "true" if render_js else "false"},
+            timeout=90,
+        )
+        if r.status_code == 200:
+            return r.text
+    except Exception as e:
+        logger.debug(f"_fetch_via_scrapingbee failed for {url}: {e}")
+    return ""
+
+
+def _extract_jobgether_apply_url(html: str) -> str | None:
+    """Jobgether embeds the real apply URL directly in the rendered page as
+    data-apply-url="..." on its <apply-button> element."""
+    m = re.search(r'data-apply-url="([^"]+)"', html)
+    return unescape(m.group(1)) if m else None
+
+
+def _extract_jobicy_apply_url(html: str) -> str | None:
+    """Jobicy resolves the real apply URL client-side via a POST to /signals.php with a
+    per-page-load nonce (deliberately not present as a plain href, even after JS render —
+    the button lives in a closed shadow DOM). Replay that same call with plain requests;
+    the nonce/action/post_id triple is still readable in the rendered page's inline script."""
+    m = re.search(r"var asteroid=\{'action':'([^']+)','nonce':'([^']+)','post_id':(\d+)", html)
+    if not m:
+        return None
+    action, nonce, post_id = m.groups()
+    try:
+        r = requests.post(
+            "https://jobicy.com/signals.php",
+            data={"action": action, "nonce": nonce, "post_id": post_id, "increment_clicks": "true"},
+            headers={**_GENERIC_HEADERS, "X-Jobicy-Ajax": "true"},
+            timeout=15,
+        )
+        if r.status_code == 200:
+            return r.json().get("url")
+    except Exception as e:
+        logger.debug(f"_extract_jobicy_apply_url failed: {e}")
+    return None
+
+
+def _fetch_via_unlocker(job_url: str) -> str | None:
+    """Fallback for Jobgether/Jobicy when find_apply_url()'s Greenhouse/Lever/Ashby
+    name-guess finds nothing — fetches the real page (Cloudflare-bypassed / JS-rendered)
+    and reads the site's own authoritative apply link, so it works no matter which ATS
+    the company actually uses. Costs ScrapingBee credits; skipped entirely if unset."""
+    host = (urlparse(job_url).hostname or "").lower()
+    if "jobgether.com" not in host and "jobicy.com" not in host:
+        return None
+    html = _fetch_via_scrapingbee(job_url)
+    if not html:
+        return None
+    if "jobgether.com" in host:
+        return _extract_jobgether_apply_url(html)
+    return _extract_jobicy_apply_url(html)
+
+
 def enrich_url(job: dict) -> None:
     """If job URL is a job-platform page, try to find the company's direct apply URL."""
     url = job.get("url", "")
@@ -322,6 +388,8 @@ def enrich_url(job: dict) -> None:
     if not _url_host_matches(url, _PLATFORM_HOSTS):
         return
     direct = find_apply_url(job.get("company", ""), job.get("title", ""))
+    if not direct:
+        direct = _fetch_via_unlocker(url)
     if direct:
         job["apply_url"] = direct
         logger.info(f"URL enriched: {job['company']} → {direct}")

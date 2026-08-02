@@ -26,6 +26,12 @@ TELEGRAM_JOB_CHANNELS: list[str] = [
     c.strip() for c in _raw_channels.split(",") if c.strip()
 ]
 
+# ScrapingBee — optional. Used to fetch Jobgether/Jobicy pages that block plain requests
+# (Cloudflare) or need JS execution (Jobicy's apply button), so we can pull the real
+# application URL instead of an aggregator link (TASK-027 follow-up). Not required for
+# the scraper to run — enrich_url() falls back to the aggregator link when unset.
+SCRAPINGBEE_API_KEY = os.environ.get("SCRAPINGBEE_API_KEY", "")
+
 
 def validate_secrets() -> None:
     """Call once at startup to fail fast on missing secrets."""

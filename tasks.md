@@ -24,6 +24,15 @@
   - _Доп._: заодно добавлен `_DIRECT_ANCHOR_HOSTS`/`_extract_direct_anchor()` — `remoteworldwide.net` embed-ит реальный apply-href прямо в HTML (не требует Greenhouse/Lever/Ashby-угадывания, работает для любого ATS), протестировано на 2/2 реальных карточках.
   - _Источник_: ручная проверка 2026-08-02 в рамках аудита Jobgether/Jobicy backlog-идеи.
 
+- [x] **TASK-028** [REQ-125]: headless-фолбэк через ScrapingBee для Jobgether/Jobicy, когда `find_apply_url()` (Greenhouse/Lever/Ashby-угадывание) ничего не находит — покрывает компании на любом другом ATS (Comeet, BambooHR и т.д.), не только на трёх поддерживаемых.
+  - _Output_: `_fetch_via_unlocker()` в `utils.py`, вызывается из `enrich_url()` как второй шаг после бесплатного `find_apply_url()`.
+  - _Решение (2026-08-02)_: пользователь завёл аккаунт ScrapingBee (`SCRAPINGBEE_API_KEY` в `config.py`/Railway). Механика оказалась разной для двух сайтов:
+    - **Jobgether**: `render_js=true` через ScrapingBee обходит Cloudflare (стабильный 403 при прямом запросе), реальная ссылка лежит прямо в отрендеренном HTML — атрибут `data-apply-url="..."` на `<apply-button>`. Один GET-запрос, без дополнительных хопов.
+    - **Jobicy**: страница по умолчанию отдаёт `text/markdown` для ботов, а кнопка "Apply" живёт в closed shadow DOM — ссылки нет даже после полного JS-рендера. Реальный механизм: JS делает `POST /signals.php` с одноразовым `nonce` (виден в inline-скрипте отрендеренной страницы) → в ответ JSON `{"url": "..."}` с настоящей ссылкой. Воспроизведено обычным `requests.post()` — сам `/signals.php` не за Cloudflare, ScrapingBee нужен только для первого шага (получить nonce).
+  - _Verify_: живой тест — Growthspace (Jobgether → Comeet, `find_apply_url()` физически не мог найти, т.к. Comeet не Greenhouse/Lever/Ashby) и Reddit (Jobicy → Greenhouse, точное совпадение с примером пользователя `job-boards.greenhouse.io/reddit/jobs/7954001`). Без `SCRAPINGBEE_API_KEY` — тихий no-op, откат на ссылку агрегатора, ничего не ломается.
+  - _Стоимость_: ScrapingBee считает кредиты за `render_js`-запрос (не за сам `/signals.php`) — по заголовку `spb-cost` увидено значение 5 за один Jobgether-запрос. При нашем объёме (десятки misses в неделю) укладывается в бесплатный тариф с большим запасом.
+  - _Источник_: пользователь напомнил про существующий аккаунт ScrapingBee 2026-08-02, вместо создания нового Bright Data.
+
 - [x] **TASK-002** [REQ-102]: убрать ветку `if qualified == 0` в `telegram.py::send_run_summary()` — просто `return` без отправки.
   - _Output_: прогон с 0 qualified не создаёт сообщение; `send_error()` не тронут.
   - _Verify_: локальный прогон с моком 0 qualified — Telegram API не вызывается.
