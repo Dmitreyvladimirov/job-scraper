@@ -33,7 +33,12 @@ def strip_html(text: str) -> str:
     return re.sub(r"\s+", " ", result).strip()
 
 
-_PLATFORM_HOSTS = ("remoteok.com", "arbeitnow.com", "weworkremotely.com")
+_PLATFORM_HOSTS = ("remoteok.com", "arbeitnow.com", "weworkremotely.com", "jobgether.com", "jobicy.com")
+
+# Sites whose own listing page already embeds the real apply link in server-rendered HTML —
+# no Greenhouse/Lever/Ashby slug-guessing needed, just read the anchor. Higher-confidence than
+# find_apply_url() since it's not a name-based guess, and works for any ATS the company uses.
+_DIRECT_ANCHOR_HOSTS = ("remoteworldwide.net",)
 
 _COMPANY_SUFFIXES = re.compile(
     r"\b(inc|ltd|llc|gmbh|sas|bv|ag|corp|co|oy|ab|as|sa|plc|pte|pty|srl|sl)\b\.?",
@@ -79,6 +84,20 @@ def _company_match(query: str, candidate: str) -> bool:
     return shared == len(q) and (len(c) - shared) <= max(0, len(q) // 2)
 
 
+def _page_title(url: str) -> str:
+    """Best-effort <title> text of a job-board page — used as a weak company-name signal
+    for ATS platforms (Lever, Ashby) whose posting APIs don't return an org name field."""
+    try:
+        r = requests.get(url, timeout=5, headers=_GENERIC_HEADERS)
+        if r.status_code == 200:
+            m = re.search(r"<title>(.*?)</title>", r.text, re.I | re.S)
+            if m:
+                return unescape(m.group(1)).strip()
+    except Exception:
+        pass
+    return ""
+
+
 def find_apply_url(company: str, title: str) -> str | None:
     """Try Greenhouse → Lever → Ashby to get a direct apply URL."""
     for slug in _slugify(company):
@@ -100,7 +119,8 @@ def find_apply_url(company: str, title: str) -> str | None:
         except Exception:
             pass
 
-        # Lever
+        # Lever — API has no company-name field, so verify against the board page's <title>
+        # (reliably just the bare company name, e.g. "Contentsquare") before trusting a match.
         try:
             r = requests.get(
                 f"https://api.lever.co/v0/postings/{slug}",
@@ -108,13 +128,18 @@ def find_apply_url(company: str, title: str) -> str | None:
                 timeout=5,
             )
             if r.status_code == 200:
-                for p in r.json():
-                    if _title_match(title, p.get("text", "")):
-                        return p.get("hostedUrl")
+                match = next((p for p in r.json() if _title_match(title, p.get("text", ""))), None)
+                if match:
+                    lever_name = _page_title(f"https://jobs.lever.co/{slug}")
+                    if lever_name and _company_match(company, lever_name):
+                        return match.get("hostedUrl")
         except Exception:
             pass
 
-        # Ashby
+        # Ashby — GraphQL schema has no queryable org-name field either; same <title> check,
+        # stripping the "... Jobs" suffix Ashby's board pages typically use. Some org boards
+        # render client-side and give an empty/generic title — in that case we skip rather
+        # than trust an unverified match, at the cost of some false negatives.
         try:
             r = requests.post(
                 "https://jobs.ashbyhq.com/api/non-user-graphql",
@@ -136,9 +161,11 @@ def find_apply_url(company: str, title: str) -> str | None:
                     .get("jobBoard", {})
                     .get("jobPostings") or []
                 )
-                for p in postings:
-                    if _title_match(title, p.get("title", "")):
-                        return f"https://jobs.ashbyhq.com/{slug}/{p['id']}"
+                match = next((p for p in postings if _title_match(title, p.get("title", ""))), None)
+                if match:
+                    ashby_name = re.sub(r"\s+Jobs$", "", _page_title(f"https://jobs.ashbyhq.com/{slug}"), flags=re.I).strip()
+                    if ashby_name and _company_match(company, ashby_name):
+                        return f"https://jobs.ashbyhq.com/{slug}/{match['id']}"
         except Exception:
             pass
 
@@ -196,9 +223,40 @@ def fetch_jd_from_url(url: str) -> str:
     return ""
 
 
+def _extract_direct_anchor(url: str) -> str | None:
+    """Read the real 'Apply Now' target straight out of server-rendered HTML — used for
+    aggregators (currently remoteworldwide.net) that embed the true apply href directly,
+    rather than requiring a Greenhouse/Lever/Ashby name-guess."""
+    try:
+        r = requests.get(url, timeout=8, headers=_GENERIC_HEADERS)
+        if r.status_code != 200:
+            return None
+        idx = r.text.find("Apply Now")
+        if idx == -1:
+            return None
+        last_a = r.text.rfind("<a ", 0, idx)
+        if last_a == -1:
+            return None
+        m = re.search(r'href="([^"]+)"', r.text[last_a:idx])
+        if m:
+            return m.group(1)
+    except Exception as e:
+        logger.debug(f"_extract_direct_anchor failed for {url}: {e}")
+    return None
+
+
 def enrich_url(job: dict) -> None:
     """If job URL is a job-platform page, try to find the company's direct apply URL."""
-    if not any(h in job.get("url", "").lower() for h in _PLATFORM_HOSTS):
+    url = job.get("url", "").lower()
+
+    if any(h in url for h in _DIRECT_ANCHOR_HOSTS):
+        direct = _extract_direct_anchor(job["url"])
+        if direct:
+            job["apply_url"] = direct
+            logger.info(f"URL enriched (direct anchor): {job['company']} → {direct}")
+        return
+
+    if not any(h in url for h in _PLATFORM_HOSTS):
         return
     direct = find_apply_url(job.get("company", ""), job.get("title", ""))
     if direct:
