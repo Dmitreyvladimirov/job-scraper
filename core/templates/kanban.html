@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Kanban — JobScraper{% endblock %}
+{% block head %}
+<style>
+  .kanban-desktop { display: grid; grid-template-columns: repeat(7, 1fr); padding: 4px 0 26px; }
+  .kanban-col { padding: 0 12px; border-right: 1px solid var(--color-divider); min-height: 120px; }
+  .kanban-col:last-child { border-right: none; }
+  .kanban-col-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--color-text); padding-bottom: 7px; margin-bottom: 12px; }
+  .kanban-col-head.is-terminal { border-bottom-color: var(--color-neutral-400); }
+  .kanban-cards { display: grid; gap: 9px; min-height: 40px; }
+  .kanban-mobile { display: none; }
+  .status-chip { min-height: 44px; padding: 0 14px; }
+  @media (max-width: 900px) {
+    .kanban-desktop { display: none; }
+    .kanban-mobile { display: block; }
+  }
+  #status-sheet { position: fixed; left: 0; right: 0; bottom: 0; background: var(--color-surface);
+    border-top: 1px solid var(--color-divider); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: var(--shadow-lg); padding: 10px 18px 20px; z-index: 60; }
+  #status-sheet::backdrop { background: color-mix(in srgb, var(--color-neutral-900) 45%, transparent); }
+  .sheet-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--color-neutral-300); margin: 0 auto 10px; }
+  .sheet-option { padding: 12px 9px; font-size: 14px; border-bottom: 1px solid var(--color-divider); cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+  .sheet-option:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+  .sheet-option.current { color: var(--color-accent); font-weight: 600; }
+</style>
+{% endblock %}
+{% block content %}
+<h2 style="font-size:29px;margin:6px 0 18px">Kanban</h2>
+
+<div class="kanban-desktop">
+  {% for status in statuses %}
+  <div class="kanban-col">
+    <div class="kanban-col-head {% if status == 'rejected' %}is-terminal{% endif %}">
+      <span style="font-family:var(--font-heading);font-weight:600;font-size:15px;{% if status == 'offer' %}color:var(--color-accent-700){% elif status == 'rejected' %}color:var(--color-neutral-600){% endif %}">{{ status_labels[status] }}</span>
+      <span style="font-size:12px;font-feature-settings:'tnum';color:{% if status == 'offer' %}var(--color-accent-700){% else %}var(--color-neutral-600){% endif %}">{{ jobs_by_status[status]|length }}</span>
+    </div>
+    <div class="kanban-cards" data-status="{{ status }}">
+      {% for job in jobs_by_status[status] %}
+      <div class="card" data-job-id="{{ job.id }}" style="padding:11px;gap:5px;cursor:grab{% if status == 'rejected' %};opacity:.75{% endif %}">
+        <div style="font-family:var(--font-heading);font-weight:600;font-size:14.5px;line-height:1.25">{{ job.title }}</div>
+        <div style="font-size:11.5px;color:var(--color-neutral-700)">{{ job.company or '—' }}</div>
+        <div class="card-meta">
+          <span style="color:var(--color-accent-700);font-weight:600;font-feature-settings:'tnum'">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
+          {% if status == 'rejected' and job.rejection_reason %}<span class="tag tag-neutral" style="align-self:start">{{ reason_labels.get(job.rejection_reason, job.rejection_reason) }}</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="kanban-mobile">
+  <div class="seg" style="font-size:12px;overflow-x:auto;max-width:100%;margin-bottom:14px">
+    {% for status in statuses %}
+    <span class="seg-opt mobile-tab" data-tab="{{ status }}" style="padding:5px 9px;white-space:nowrap">{{ status_labels[status] }} {{ jobs_by_status[status]|length }}</span>
+    {% endfor %}
+  </div>
+  {% for status in statuses %}
+  <div class="mobile-panel" data-panel="{{ status }}" style="display:none">
+    <div style="display:grid;gap:10px">
+      {% for job in jobs_by_status[status] %}
+      <div class="card" style="padding:12px;gap:5px">
+        <div style="display:flex;justify-content:space-between;gap:8px">
+          <div style="font-family:var(--font-heading);font-weight:600;font-size:15.5px">{{ job.title }} — {{ job.company or '—' }}</div>
+          <span style="font-family:var(--font-heading);font-weight:600;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11.5px;color:var(--color-neutral-600)">{{ job.source }}</span>
+          <span class="tag tag-outline status-chip" onclick="openStatusSheet({{ job.id }}, {{ job.title|tojson }}, {{ status|tojson }})">{{ status_labels[status] }} ▾</span>
+        </div>
+      </div>
+      {% endfor %}
+      {% if not jobs_by_status[status] %}<p class="text-muted" style="text-align:center;padding:20px 0">Nothing here.</p>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<dialog id="status-sheet">
+  <div class="sheet-handle"></div>
+  <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:8px" id="sheet-heading">Move to</div>
+  <div id="sheet-options"></div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+  var STATUS_LABELS = {{ status_labels_json|safe }};
+  var STATUSES = {{ statuses_json|safe }};
+  var TOKEN = "{{ token }}";
+
+  // Desktop drag-and-drop
+  document.querySelectorAll('.kanban-cards').forEach(function (col) {
+    new Sortable(col, {
+      group: 'kanban', animation: 150,
+      onEnd: function (evt) {
+        var jobId = evt.item.getAttribute('data-job-id');
+        var newStatus = evt.to.getAttribute('data-status');
+        if (evt.from === evt.to) return;
+        moveJob(jobId, newStatus, evt.item);
+      }
+    });
+  });
+
+  function moveJob(jobId, newStatus, cardEl) {
+    if (newStatus === 'rejected') {
+      htmx.ajax('GET', '/jobs/' + jobId + '/reject-form?token=' + TOKEN, {target: '#reject-modal-slot', swap: 'innerHTML'});
+      if (cardEl) cardEl.remove();
+      return;
+    }
+    fetch('/jobs/' + jobId + '/status?token=' + TOKEN, {
+      method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'new_status=' + encodeURIComponent(newStatus)
+    }).then(function (r) { if (!r.ok) location.reload(); });
+  }
+
+  // Mobile tabs
+  var tabs = document.querySelectorAll('.mobile-tab');
+  function showTab(status) {
+    document.querySelectorAll('.mobile-panel').forEach(function (p) { p.style.display = p.getAttribute('data-panel') === status ? 'block' : 'none'; });
+    tabs.forEach(function (t) {
+      var active = t.getAttribute('data-tab') === status;
+      t.style.color = active ? 'var(--color-accent)' : '';
+      t.style.boxShadow = active ? 'inset 0 0 0 1px var(--color-accent)' : '';
+    });
+  }
+  tabs.forEach(function (t) { t.addEventListener('click', function () { showTab(t.getAttribute('data-tab')); }); });
+  if (STATUSES.length) showTab(STATUSES[0]);
+
+  // Mobile bottom sheet
+  var sheet = document.getElementById('status-sheet');
+  function openStatusSheet(jobId, title, currentStatus) {
+    document.getElementById('sheet-heading').textContent = 'Move "' + title + '" to';
+    var html = '';
+    STATUSES.forEach(function (s) {
+      html += '<div class="sheet-option' + (s === currentStatus ? ' current' : '') + '" onclick="chooseStatus(' + jobId + ',\'' + s + '\')">' + STATUS_LABELS[s] + (s === currentStatus ? ' ✓' : '') + '</div>';
+    });
+    document.getElementById('sheet-options').innerHTML = html;
+    sheet.showModal();
+  }
+  function chooseStatus(jobId, status) {
+    moveJob(jobId, status, null);
+    sheet.close();
+    setTimeout(function () { location.reload(); }, 300);
+  }
+  sheet.addEventListener('click', function (e) { if (e.target === sheet) sheet.close(); });
+</script>
+{% endblock %}

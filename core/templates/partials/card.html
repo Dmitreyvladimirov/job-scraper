@@ -1,0 +1,73 @@
+<details class="review-row" style="border-bottom:1px solid var(--color-divider)" id="job-{{ job.id }}">
+  <summary style="display:flex;align-items:center;gap:18px;padding:14px 0;cursor:pointer;list-style:none">
+    <div style="width:56px;text-align:center;flex:none">
+      <div style="font-family:var(--font-heading);font-size:29px;line-height:1;font-feature-settings:'tnum';color:{% if job.ats_score and job.ats_score >= 85 %}var(--color-accent-700){% elif job.ats_score and job.ats_score >= 70 %}var(--color-accent-500){% else %}var(--color-neutral-600){% endif %}">{{ job.ats_score if job.ats_score is not none else '—' }}</div>
+      <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600)">ATS</div>
+    </div>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+        <span style="font-family:var(--font-heading);font-weight:600;font-size:18px">{{ job.title }}</span>
+        <span style="font-size:13px;color:var(--color-neutral-700)">{{ job.company or '—' }}{% if job.salary %} · {{ job.salary }}{% endif %}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;margin-top:4px;font-size:12px;color:var(--color-neutral-600);flex-wrap:wrap">
+        <span>{{ job.source }}</span>
+        {% if job.domain %}<span>{{ job.domain }}</span>{% endif %}
+        {% if job.role_score is none %}
+          <span style="font-style:italic;color:var(--color-neutral-500)">No breakdown or keywords recorded for this vacancy</span>
+        {% endif %}
+      </div>
+    </div>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-500)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="m6 9 6 6 6-6"></path></svg>
+  </summary>
+
+  {% if job.role_score is not none %}
+  <div style="border-top:1px solid var(--color-divider);background:color-mix(in srgb,var(--color-accent) 4%,transparent);margin-top:-1px">
+    <div style="display:grid;grid-template-columns:250px 1fr;gap:28px;padding:16px 0 22px 74px">
+      <div>
+        <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);margin-bottom:8px">Score breakdown</div>
+        <div style="display:grid;gap:5px;font-size:13px;font-feature-settings:'tnum'">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Role</span><span style="color:var(--color-accent-700);font-weight:600">{{ job.role_score }} / 30</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Domain (V {{ job.domain_value_score }} + E {{ job.domain_exp_score }})</span><span style="color:var(--color-accent-700);font-weight:600">{{ job.domain_score }} / 30</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Keywords</span><span style="color:var(--color-accent-500);font-weight:600">{{ job.keyword_score }} / 25</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Location</span><span style="color:var(--color-accent-700);font-weight:600">{{ job.location_score }} / 15</span></div>
+          {% if job.penalty_reason %}
+          <div style="display:flex;justify-content:space-between;border-top:1px solid var(--color-divider);padding-top:5px"><span style="color:var(--color-neutral-700)">Penalty</span><span style="color:var(--color-neutral-600);font-weight:600">−15</span></div>
+          <div style="font-size:11px;color:var(--color-neutral-600)">{{ job.penalty_reason }}</div>
+          {% endif %}
+          {% if job.location_reason %}
+          <div style="font-size:11px;color:var(--color-neutral-600);margin-top:4px">Location: {{ job.location_reason }}</div>
+          {% endif %}
+        </div>
+      </div>
+      <div style="display:grid;gap:12px">
+        {% if job.matched_keywords or job.missed_keywords %}
+        <div>
+          <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);margin-bottom:6px">Keywords</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            {% for kw in (job.matched_keywords or []) %}<span class="tag tag-accent">{{ kw }}</span>{% endfor %}
+            {% for kw in (job.missed_keywords or []) %}<span class="tag tag-neutral" style="text-decoration:line-through;opacity:.75">{{ kw }}</span>{% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:13px;line-height:1.55">
+          {% if job.why_apply %}<div><div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);margin-bottom:6px">Why apply</div><p style="margin:0;text-align:justify">{{ job.why_apply }}</p></div>{% endif %}
+          {% if job.why_not %}<div><div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:6px">Why not</div><p style="margin:0;color:var(--color-neutral-700);text-align:justify">{{ job.why_not }}</p></div>{% endif %}
+        </div>
+        <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status?token={{ token }}" hx-vals='{"new_status": "applied"}' hx-target="#job-{{ job.id }}" hx-swap="outerHTML">Apply — move to funnel</button>
+          <button class="btn btn-secondary" hx-get="/jobs/{{ job.id }}/reject-form?token={{ token }}" hx-target="#reject-modal-slot" hx-swap="innerHTML">Reject…</button>
+          {% set posting_url = (job.apply_url or job.url)|safe_url %}
+          {% if posting_url %}<a class="btn btn-ghost" href="{{ posting_url }}" target="_blank" rel="noopener noreferrer" style="gap:5px">Open posting<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div style="padding:12px 0 18px 74px;display:flex;gap:9px">
+    <button class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status?token={{ token }}" hx-vals='{"new_status": "applied"}' hx-target="#job-{{ job.id }}" hx-swap="outerHTML">Apply</button>
+    <button class="btn btn-secondary" hx-get="/jobs/{{ job.id }}/reject-form?token={{ token }}" hx-target="#reject-modal-slot" hx-swap="innerHTML">Reject…</button>
+    {% set posting_url_plain = (job.apply_url or job.url)|safe_url %}
+    {% if posting_url_plain %}<a class="btn btn-ghost" href="{{ posting_url_plain }}" target="_blank" rel="noopener noreferrer">Open posting</a>{% endif %}
+  </div>
+  {% endif %}
+</details>

@@ -1,0 +1,28 @@
+<div class="dialog-backdrop" id="reject-dialog" style="z-index:50">
+  <form class="dialog" hx-post="/jobs/{{ job.id }}/status?token={{ token }}" hx-target="#job-{{ job.id }}" hx-swap="outerHTML" hx-on::after-request="if(event.detail.successful){document.getElementById('reject-dialog').remove()}">
+    <input type="hidden" name="new_status" value="rejected">
+    <div class="dialog-title">Reject — {{ job.title }}</div>
+    <div class="dialog-body">
+      <div style="font-size:12px;color:var(--color-neutral-600);margin-bottom:12px">{{ job.company or '—' }}{% if job.ats_score is not none %} · ATS {{ job.ats_score }}{% endif %} · a reason is required before the card moves to Rejected.</div>
+      <div style="display:grid;gap:10px">
+        {% for value, label in reasons %}
+        <label class="radio">
+          <input type="radio" name="rejection_reason" value="{{ value }}" required>
+          <span class="dot"></span>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      {% if job.rejection_reason == 'geo_restricted_auto' %}
+      <div style="display:flex;gap:12px;align-items:center;border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:10px 12px;margin-top:14px">
+        <span class="tag tag-outline">GEO_RESTRICTED · auto-LLM</span>
+        <span style="font-size:12px;color:var(--color-neutral-600)">set by the pipeline only — not selectable here</span>
+      </div>
+      {% endif %}
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('reject-dialog').remove()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Reject vacancy</button>
+    </div>
+  </form>
+</div>

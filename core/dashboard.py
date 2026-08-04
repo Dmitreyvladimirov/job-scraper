@@ -3,17 +3,53 @@ import hmac
 import json
 import os
 from html import escape
-from urllib.parse import quote
+from pathlib import Path
+from urllib.parse import quote, urlparse
 
 import psycopg2
 import psycopg2.extras
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+import db
+from config import CURRENT_STATUSES, REJECTION_REASON_LABELS, USER_REJECTION_REASONS
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
 
 app = FastAPI()
+
+_BASE_DIR = Path(__file__).parent
+app.mount("/static", StaticFiles(directory=_BASE_DIR / "static"), name="static")
+templates = Jinja2Templates(directory=_BASE_DIR / "templates")
+# Starlette's Jinja2Templates does not register a `tojson` filter by default (that's a
+# Flask-ism) — register our own, reusing the same `<` escape as _json_js() below so a
+# scraped value (job title, company) can't break out of a JS string context when
+# embedded in an inline event handler (see kanban.html's status-chip onclick).
+templates.env.filters["tojson"] = lambda v: json.dumps(v).replace("<", "\\u003c")
+
+
+def _safe_job_url(url: str | None) -> str | None:
+    """job.apply_url/job.url come from scraped sources (incl. Telegram channel posts,
+    which we don't control) with no scheme validation upstream — reject anything that
+    isn't http(s) so a `javascript:`-URI job link can't execute in the dashboard's
+    origin when clicked (Open posting)."""
+    if not url:
+        return None
+    try:
+        return url if urlparse(url).scheme in ("http", "https") else None
+    except ValueError:
+        return None
+
+
+templates.env.filters["safe_url"] = _safe_job_url
+
+STATUS_LABELS = {
+    "found": "Found", "applied": "Applied", "recruiter_reply": "Recruiter reply",
+    "screen": "Screen", "interview": "Interview", "offer": "Offer", "rejected": "Rejected",
+}
 
 
 @app.on_event("startup")
@@ -39,7 +75,7 @@ def _check_token(token: str):
 
 
 def _query(sql: str, params=()) -> list[dict]:
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor, connect_timeout=10)
     try:
         with conn.cursor() as cur:
             cur.execute(sql, params)
@@ -248,6 +284,22 @@ def dashboard(token: str = Query(default="")):
   </table>
 </div>
 
+<div class="section" hx-get="/stats/rejection-reasons?token={quote(token, safe="")}" hx-trigger="load" hx-swap="innerHTML">
+  <h2>Rejection reasons</h2>
+</div>
+
+<div class="section" hx-get="/stats/conversion?token={quote(token, safe="")}" hx-trigger="load" hx-swap="innerHTML">
+  <h2>Qualified → applied</h2>
+</div>
+
+<div class="section" hx-get="/sources?token={quote(token, safe="")}" hx-trigger="load" hx-swap="innerHTML">
+  <h2>Sources</h2>
+</div>
+
+<script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"
+        integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
+        crossorigin="anonymous"></script>
+<link rel="stylesheet" href="/static/classical.css">
 <script>
 const C = (id, cfg) => new Chart(document.getElementById(id), cfg);
 const grid = {{ color: '#2a2d3a' }};
@@ -307,3 +359,130 @@ C('sourceChart', {{
 </body>
 </html>"""
     return HTMLResponse(html)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Review UI (SPEC_FRONTEND.md v1.2) — Card Review, Kanban, rejection reasons,
+# stats, sources panel. Postgres-only — never calls the Notion API.
+# ══════════════════════════════════════════════════════════════════════════
+
+_VALID_SORTS = {"newest", "score", "source"}
+
+
+@app.get("/review", response_class=HTMLResponse)
+def review(request: Request, token: str = Query(default=""), sort: str = Query(default="newest")):
+    _check_token(token)
+    if sort not in _VALID_SORTS:
+        sort = "newest"
+    jobs = db.get_review_jobs(sort=sort)
+    return templates.TemplateResponse(request, "card_review.html", {
+        "jobs": jobs, "sort": sort, "token": token, "active": "review",
+    })
+
+
+@app.get("/kanban", response_class=HTMLResponse)
+def kanban(request: Request, token: str = Query(default="")):
+    _check_token(token)
+    jobs_by_status = db.get_kanban_jobs()
+    return templates.TemplateResponse(request, "kanban.html", {
+        "jobs_by_status": jobs_by_status,
+        "statuses": CURRENT_STATUSES,
+        "status_labels": STATUS_LABELS,
+        "status_labels_json": json.dumps(STATUS_LABELS),
+        "statuses_json": json.dumps(CURRENT_STATUSES),
+        "reason_labels": REJECTION_REASON_LABELS,
+        "token": token, "active": "kanban",
+    })
+
+
+@app.post("/jobs/{job_id}/status", response_class=HTMLResponse)
+def change_job_status(
+    request: Request,
+    job_id: int,
+    token: str = Query(default=""),
+    new_status: str = Form(...),
+    rejection_reason: str | None = Form(default=None),
+):
+    _check_token(token)
+    try:
+        db.update_job_status(job_id, new_status, rejection_reason=rejection_reason)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    job = db.get_job(job_id)
+    if new_status == "found" or (job and job["current_status"] == "found"):
+        # Still/again in the review list — return the row fragment (HTMX target
+        # for /review is a <details> row; /kanban's JS ignores the body on success).
+        return templates.TemplateResponse(request, "partials/card.html", {"job": job, "token": token})
+    # Moved out of review — swap to an empty node so the row disappears from /review's list.
+    return HTMLResponse(f'<div id="job-{job_id}"></div>')
+
+
+@app.get("/jobs/{job_id}/reject-form", response_class=HTMLResponse)
+def reject_form(request: Request, job_id: int, token: str = Query(default="")):
+    _check_token(token)
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown job id")
+    reasons = [(r, REJECTION_REASON_LABELS[r]) for r in USER_REJECTION_REASONS]
+    return templates.TemplateResponse(request, "partials/rejection_form.html", {
+        "job": job, "reasons": reasons, "token": token,
+    })
+
+
+def _parse_date_range(date_from: str | None, date_to: str | None) -> tuple[str | None, str | None]:
+    from datetime import date
+    for value in (date_from, date_to):
+        if value is None:
+            continue
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid date: {value!r} (expected YYYY-MM-DD)")
+    return date_from, date_to
+
+
+@app.get("/stats/rejection-reasons", response_class=HTMLResponse)
+def stats_rejection_reasons(
+    request: Request, token: str = Query(default=""),
+    date_from: str | None = Query(default=None, alias="from"),
+    date_to: str | None = Query(default=None, alias="to"),
+):
+    _check_token(token)
+    date_from, date_to = _parse_date_range(date_from, date_to)
+    counts = db.get_rejection_reason_counts(date_from, date_to)
+    return templates.TemplateResponse(request, "partials/stats_rejection_reasons.html", {
+        "counts": counts, "reason_labels": REJECTION_REASON_LABELS,
+    })
+
+
+@app.get("/stats/conversion", response_class=HTMLResponse)
+def stats_conversion(
+    request: Request, token: str = Query(default=""),
+    date_from: str | None = Query(default=None, alias="from"),
+    date_to: str | None = Query(default=None, alias="to"),
+):
+    _check_token(token)
+    date_from, date_to = _parse_date_range(date_from, date_to)
+    stats = db.get_conversion_stats(date_from, date_to)
+    return templates.TemplateResponse(request, "partials/stats_conversion.html", {"stats": stats})
+
+
+@app.get("/sources", response_class=HTMLResponse)
+def sources_panel(request: Request, token: str = Query(default="")):
+    _check_token(token)
+    sources = db.get_sources_summary()
+    return templates.TemplateResponse(request, "partials/sources_panel.html", {
+        "sources": sources, "token": token,
+    })
+
+
+@app.post("/sources/{name}/toggle", response_class=HTMLResponse)
+def toggle_source_route(request: Request, name: str, token: str = Query(default="")):
+    _check_token(token)
+    if not db.toggle_source(name):
+        raise HTTPException(status_code=404, detail=f"Unknown source: {name}")
+    sources = db.get_sources_summary()
+    return templates.TemplateResponse(request, "partials/sources_panel.html", {
+        "sources": sources, "token": token,
+    })

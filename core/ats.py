@@ -27,6 +27,7 @@ class ATSResult:
     location_score: int = 0
     location_reason: str = ""
     penalty: int = 0
+    penalty_reason: str = ""
 
 
 def analyze(job: dict, resume_text: str) -> ATSResult | None:
@@ -139,6 +140,7 @@ Reply with ONLY this JSON, no other text:
   "location_score": <0-15>,
   "location_reason": "<REQUIRED. <20 words: quote or paraphrase the specific JD text that justifies the location_score (residency/citizenship/clearance requirement, or the on-site/hybrid office location). If scoring 15, write 'no restriction found — worldwide/Israel'.>",
   "penalty": <0 or 15>,
+  "penalty_reason": "<REQUIRED if penalty is 15: <20 words naming the specific domain requirement and the gap (e.g. 'requires 5+ years IAM experience, candidate has none'). Empty string if penalty is 0.>",
   "domain": "<detected domain: AI/ML | B2B SaaS | Cybersecurity | FinTech | EdTech | Data/Analytics | Growth/Consumer | Other>",
   "why_apply": "<one sentence: strongest reason to apply>",
   "why_not": "<one sentence: biggest gap or risk>",
@@ -175,6 +177,7 @@ Reply with ONLY this JSON, no other text:
         location_score     = min(15, max(0, int(parsed.get("location_score", 0))))
         location_reason    = parsed.get("location_reason", "") or ""
         penalty            = 15 if int(parsed.get("penalty", 0)) > 0 else 0
+        penalty_reason     = (parsed.get("penalty_reason", "") or "") if penalty else ""
 
         score = max(0, role_score + domain_score + keyword_score + location_score - penalty)
 
@@ -198,6 +201,7 @@ Reply with ONLY this JSON, no other text:
             location_score=location_score,
             location_reason=location_reason,
             penalty=penalty,
+            penalty_reason=penalty_reason,
         )
     except Exception as e:
         logger.error(f"ATS analysis failed for '{job['title']}': {e}")

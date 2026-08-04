@@ -77,3 +77,62 @@ EXCLUDE_LOCATION_PATTERNS = [
     "europe only", "eu only", "uk only", "australia only", "canada only",
     "latam only", "latin america only", "apac only",
 ]
+
+# Review UI (SPEC_FRONTEND.md v1.2) — kanban funnel states, in order. "rejected" is
+# reachable from any state (not part of the linear order) and is handled separately
+# in db.is_valid_transition().
+CURRENT_STATUSES = ["found", "applied", "recruiter_reply", "screen", "interview", "offer", "rejected"]
+FUNNEL_ORDER = ["found", "applied", "recruiter_reply", "screen", "interview", "offer"]
+
+# Rejection reasons — 6 categories (FRONTEND_DESIGN_BRIEF.md). geo_restricted_auto is
+# set programmatically by the existing ResumeBuilder pipeline script, never through the
+# user-facing rejection form.
+REJECTION_REASONS = [
+    "low_score_after_review",
+    "remote_one_country",
+    "not_remote_at_all",
+    "inactive_closed",
+    "bad_in_general",
+    "geo_restricted_auto",
+]
+REJECTION_REASON_LABELS = {
+    "low_score_after_review": "Плохо подошла по скорингу после проверки",
+    "remote_one_country": "Ремоут, но только в одной стране",
+    "not_remote_at_all": "Вакансия не удалённая вообще",
+    "inactive_closed": "Вакансия неактивна / закрыта",
+    "bad_in_general": "Вакансия плохая в принципе",
+    "geo_restricted_auto": "GEO_RESTRICTED (авто-LLM)",
+}
+# Reasons selectable through the user-facing rejection form — excludes geo_restricted_auto.
+USER_REJECTION_REASONS = [r for r in REJECTION_REASONS if r != "geo_restricted_auto"]
+
+
+def is_valid_transition(old_status: str, new_status: str) -> bool:
+    """Kanban status-transition rule: forward-only through FUNNEL_ORDER (skipping
+    stages is fine), reject from anywhere, never move away from rejected via this
+    endpoint (undo isn't in scope — see SPEC_FRONTEND.md Boundaries). old_status=None
+    means the job never reached 'qualified' and never entered the funnel — it must
+    not be reachable through this endpoint at all, not even straight to 'rejected'."""
+    if old_status is None:
+        return False
+    if new_status == "rejected":
+        return old_status != "rejected"
+    if old_status == "rejected":
+        return False
+    if old_status not in FUNNEL_ORDER or new_status not in FUNNEL_ORDER:
+        return False
+    return FUNNEL_ORDER.index(new_status) > FUNNEL_ORDER.index(old_status)
+
+
+def validate_status_change(old_status: str, new_status: str, rejection_reason: str | None) -> str | None:
+    """Pure validation for a kanban status change — no DB access, so it's unit-testable
+    in isolation (db.update_job_status() calls this, then does the actual write).
+    Returns an error message if invalid, or None if the change is allowed."""
+    if not is_valid_transition(old_status, new_status):
+        return f"Invalid transition {old_status} -> {new_status}"
+    if new_status == "rejected":
+        if rejection_reason not in REJECTION_REASONS:
+            return "rejection_reason is required and must be one of the known categories"
+        if rejection_reason == "geo_restricted_auto":
+            return "geo_restricted_auto cannot be set through this endpoint"
+    return None

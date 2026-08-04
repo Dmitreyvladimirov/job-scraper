@@ -1,0 +1,27 @@
+<div id="sources-panel">
+  <h4 style="margin:0 0 4px">Sources</h4>
+  <p class="text-muted" style="font-size:12px;margin-bottom:16px">{{ sources|length }} connected · {{ sources|selectattr('enabled')|list|length }} active</p>
+  <table class="table">
+    <thead>
+      <tr><th>Source</th><th>Fetched</th><th>Qualified</th><th>Yield</th><th>Applied from</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in sources %}
+      <tr style="{% if not s.enabled %}opacity:.5{% endif %}">
+        <td>{{ s.source }}</td>
+        <td style="font-feature-settings:'tnum'">{{ s.fetched }}</td>
+        <td style="font-feature-settings:'tnum';color:var(--color-accent-700);font-weight:600">{{ s.qualified }}</td>
+        <td style="font-feature-settings:'tnum'">{{ s.yield_pct }}%</td>
+        <td style="font-feature-settings:'tnum'">{{ s.applied_from }}</td>
+        <td>
+          <button class="btn {% if s.enabled %}btn-secondary{% else %}btn-ghost{% endif %}" style="font-size:12px;padding:4px 10px"
+            hx-post="/sources/{{ s.source|urlencode }}/toggle?token={{ token }}" hx-target="#sources-panel" hx-swap="outerHTML">
+            {{ 'On' if s.enabled else 'Off' }}
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="font-size:11px;color:var(--color-neutral-600);margin-top:10px">Toggling off removes the source from future scrape runs; already-found vacancies stay.</p>
+</div>

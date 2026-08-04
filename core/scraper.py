@@ -190,8 +190,10 @@ def run() -> None:
                 job["company"] = m.group(1).strip()
 
         if filters.is_russia_based(job):
-            job["russia_warning"] = True
-            logger.info(f"  🇷🇺 Russia warning: {job['title']} @ {job['company']}")
+            logger.info(f"  🇷🇺 Russia — rejecting: {job['title']} @ {job['company']}")
+            counts["location"] += 1
+            db.log_job(run_id, job, "location")
+            continue
 
         result = ats.analyze(job, resume)
         gpt_calls += 1
@@ -212,7 +214,13 @@ def run() -> None:
             seen_keys.add(job_key)
             counts["score"] += 1
             db.log_job(run_id, job, "low_score", ats_score=result.score,
-                       domain=result.domain, why_not=result.why_not)
+                       domain=result.domain, why_not=result.why_not,
+                       why_apply=result.why_apply, matched_keywords=result.matched,
+                       missed_keywords=result.missed, penalty_reason=result.penalty_reason or None,
+                       role_score=result.role_score, domain_score=result.domain_score,
+                       domain_value_score=result.domain_value_score, domain_exp_score=result.domain_exp_score,
+                       keyword_score=result.keyword_score, location_score=result.location_score,
+                       location_reason=result.location_reason or None)
             continue
 
         company_key = job.get("company", "").lower().strip()
@@ -225,12 +233,17 @@ def run() -> None:
         seen_keys.add(job_key)
         counts["qualified"] += 1
         db.log_job(run_id, job, "qualified", ats_score=result.score,
-                   domain=result.domain, why_not=result.why_not)
+                   domain=result.domain, why_not=result.why_not,
+                   why_apply=result.why_apply, matched_keywords=result.matched,
+                   missed_keywords=result.missed, penalty_reason=result.penalty_reason or None,
+                   role_score=result.role_score, domain_score=result.domain_score,
+                   domain_value_score=result.domain_value_score, domain_exp_score=result.domain_exp_score,
+                   keyword_score=result.keyword_score, location_score=result.location_score,
+                   location_reason=result.location_reason or None)
         top_jobs.append({
             "title": job["title"],
             "company": job["company"],
             "score": result.score,
-            "russia_warning": job.get("russia_warning", False),
         })
 
     top_jobs.sort(key=lambda x: x["score"], reverse=True)

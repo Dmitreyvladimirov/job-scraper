@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}JobScraper{% endblock %}</title>
+<link rel="stylesheet" href="/static/classical.css">
+<script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"
+        integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"
+        integrity="sha384-BSxuMLxX+FCbTdYec3TbXlnMGEEM2QXTFdtDaveen71o+jswm2J36+xFqp8k4VHM"
+        crossorigin="anonymous"></script>
+<style>
+  body { padding: 0; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 0 var(--space-4); }
+  .toggle-dark { background: none; border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+    width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--color-text); }
+  .toggle-dark:hover { border-color: var(--color-accent); color: var(--color-accent); }
+  @media (max-width: 700px) { .wrap { padding: 0 var(--space-3); } }
+</style>
+{% block head %}{% endblock %}
+</head>
+<body class="">
+<div class="nav">
+  <div class="wrap" style="display:flex;align-items:center;gap:var(--space-4);width:100%">
+    <span class="nav-brand">JobScraper</span>
+    <a href="/review?token={{ token }}" {% if active == 'review' %}aria-current="page"{% endif %}>Review</a>
+    <a href="/kanban?token={{ token }}" {% if active == 'kanban' %}aria-current="page"{% endif %}>Kanban</a>
+    <a href="/dashboard?token={{ token }}" {% if active == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+    <span style="margin-left:auto"></span>
+    <button class="toggle-dark" id="dark-toggle" title="Toggle dark theme" type="button">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+    </button>
+  </div>
+</div>
+<div class="wrap" style="padding-top:var(--space-4);padding-bottom:var(--space-8)">
+{% block content %}{% endblock %}
+</div>
+<script>
+  (function () {
+    var saved = localStorage.getItem('jobscraper-theme');
+    if (saved === 'dark') document.body.classList.add('dark');
+    document.getElementById('dark-toggle').addEventListener('click', function () {
+      document.body.classList.toggle('dark');
+      localStorage.setItem('jobscraper-theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+    });
+  })();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

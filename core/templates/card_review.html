@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Card Review — JobScraper{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:baseline;gap:14px;padding:6px 0 6px">
+  <h2 style="font-size:29px;margin:0">Card Review</h2>
+  <span style="font-size:13px;color:color-mix(in srgb,var(--color-text) 55%,transparent);font-feature-settings:'tnum'">{{ jobs|length }} found · awaiting review</span>
+  <span style="margin-left:auto"></span>
+  <div class="seg">
+    <a class="seg-opt" href="/review?token={{ token }}&sort=newest" style="{% if sort == 'newest' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Newest</a>
+    <a class="seg-opt" href="/review?token={{ token }}&sort=score" style="{% if sort == 'score' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Score</a>
+    <a class="seg-opt" href="/review?token={{ token }}&sort=source" style="{% if sort == 'source' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Source</a>
+  </div>
+</div>
+
+<div style="padding:10px 0 26px" id="review-list">
+{% if not jobs %}
+  <p class="text-muted" style="padding:40px 0;text-align:center">Nothing waiting for review — all caught up.</p>
+{% endif %}
+{% for job in jobs %}
+  {% include "partials/card.html" %}
+{% endfor %}
+</div>
+
+<div id="reject-modal-slot"></div>
+{% endblock %}

@@ -10,3 +10,11 @@ get_google_token.py
 test_telegram.py
 jobs.db
 .DS_Store
+
+# one-off script run logs / reports (rescoring, backfill, imports)
+*_run.log
+*_run2.log
+*_report.json
+shortlist_enriched.json
+rescore_final.json
+*.zip

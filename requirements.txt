@@ -7,3 +7,6 @@ psycopg2-binary>=2.9.9
 telethon>=1.36.0
 python-dotenv>=1.0.0
 beautifulsoup4>=4.12.0
+jinja2>=3.1.4
+pytest>=8.2.0
+python-multipart>=0.0.9

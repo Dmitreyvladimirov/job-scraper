@@ -1,0 +1,14 @@
+<div id="conversion-stats" style="border-left:1px solid var(--color-divider);padding-left:36px">
+  <h6 style="margin:0 0 14px;color:var(--color-accent)">Qualified → applied</h6>
+  <div style="font-family:var(--font-heading);font-size:52px;line-height:1;font-feature-settings:'tnum'">{{ stats.rate }}<span style="font-size:24px;color:var(--color-neutral-600)">%</span></div>
+  <div style="font-size:12.5px;color:var(--color-neutral-600);margin:6px 0 18px;font-feature-settings:'tnum'">{{ stats.applied_total }} applied of {{ stats.qualified_total }} qualified — this range</div>
+  <div style="display:grid;gap:8px;font-size:12px;font-feature-settings:'tnum'">
+    {% for row in stats.per_month %}
+    <div style="display:flex;justify-content:space-between;{% if not loop.last %}border-bottom:1px solid var(--color-divider);padding-bottom:6px{% endif %}">
+      <span style="color:var(--color-neutral-700)">{{ row.month }}</span>
+      <span><b>{{ row.rate }}%</b> · {{ row.applied }}/{{ row.qualified }}</span>
+    </div>
+    {% endfor %}
+    {% if not stats.per_month %}<p class="text-muted">No data in this range yet.</p>{% endif %}
+  </div>
+</div>
