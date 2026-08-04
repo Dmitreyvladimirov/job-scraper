@@ -42,8 +42,7 @@ def send_run_summary(counts: dict, top_jobs: list[dict], source_counts: dict | N
 
     top_lines = ""
     for j in top_jobs[:3]:
-        russia_flag = " 🇷🇺" if j.get("russia_warning") else ""
-        top_lines += f"• {j['title']} @ {j['company']} — {j['score']}/100{russia_flag}\n"
+        top_lines += f"• {j['title']} @ {j['company']} — {j['score']}/100\n"
 
     dashboard_link = f" | [Дашборд]({_DASHBOARD_URL})" if _DASHBOARD_URL else ""
     text = (
