@@ -108,20 +108,24 @@ USER_REJECTION_REASONS = [r for r in REJECTION_REASONS if r != "geo_restricted_a
 
 
 def is_valid_transition(old_status: str, new_status: str) -> bool:
-    """Kanban status-transition rule: forward-only through FUNNEL_ORDER (skipping
-    stages is fine), reject from anywhere, never move away from rejected via this
-    endpoint (undo isn't in scope — see SPEC_FRONTEND.md Boundaries). old_status=None
-    means the job never reached 'qualified' and never entered the funnel — it must
-    not be reachable through this endpoint at all, not even straight to 'rejected'."""
+    """Kanban status-transition rule: forward any distance through FUNNEL_ORDER
+    (skipping stages is fine), backward exactly one step (drag-and-drop correction —
+    further undo isn't in scope), reject from anywhere, un-reject back into any
+    funnel stage (a rejection can happen from any stage, so there's no single
+    "one step back" target to restore). old_status=None means the job never reached
+    'qualified' and never entered the funnel — it must not be reachable through this
+    endpoint at all, not even straight to 'rejected'."""
     if old_status is None:
         return False
-    if new_status == "rejected":
-        return old_status != "rejected"
     if old_status == "rejected":
-        return False
+        return new_status in FUNNEL_ORDER
+    if new_status == "rejected":
+        return True
     if old_status not in FUNNEL_ORDER or new_status not in FUNNEL_ORDER:
         return False
-    return FUNNEL_ORDER.index(new_status) > FUNNEL_ORDER.index(old_status)
+    old_idx = FUNNEL_ORDER.index(old_status)
+    new_idx = FUNNEL_ORDER.index(new_status)
+    return new_idx > old_idx or new_idx == old_idx - 1
 
 
 def validate_status_change(old_status: str, new_status: str, rejection_reason: str | None) -> str | None:

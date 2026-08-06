@@ -56,8 +56,8 @@
           {% if job.why_not %}<div><div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:6px">Why not</div><p style="margin:0;color:var(--color-neutral-700);text-align:justify">{{ job.why_not }}</p></div>{% endif %}
         </div>
         <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status?token={{ token }}" hx-vals='{"new_status": "applied"}' hx-target="#job-{{ job.id }}" hx-swap="outerHTML">Apply — move to funnel</button>
-          <button class="btn btn-secondary" hx-get="/jobs/{{ job.id }}/reject-form?token={{ token }}" hx-target="#reject-modal-slot" hx-swap="innerHTML">Reject…</button>
+          <button class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status" hx-vals='{"new_status": "applied"}' hx-target="#job-{{ job.id }}" hx-swap="outerHTML">Apply — move to funnel</button>
+          <button class="btn btn-secondary" hx-get="/jobs/{{ job.id }}/reject-form" hx-target="#reject-modal-slot" hx-swap="innerHTML">Reject…</button>
           {% set posting_url = (job.apply_url or job.url)|safe_url %}
           {% if posting_url %}<a class="btn btn-ghost" href="{{ posting_url }}" target="_blank" rel="noopener noreferrer" style="gap:5px">Open posting<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>{% endif %}
         </div>
@@ -66,8 +66,8 @@
   </div>
   {% else %}
   <div style="padding:12px 0 18px 74px;display:flex;gap:9px">
-    <button class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status?token={{ token }}" hx-vals='{"new_status": "applied"}' hx-target="#job-{{ job.id }}" hx-swap="outerHTML">Apply</button>
-    <button class="btn btn-secondary" hx-get="/jobs/{{ job.id }}/reject-form?token={{ token }}" hx-target="#reject-modal-slot" hx-swap="innerHTML">Reject…</button>
+    <button class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status" hx-vals='{"new_status": "applied"}' hx-target="#job-{{ job.id }}" hx-swap="outerHTML">Apply</button>
+    <button class="btn btn-secondary" hx-get="/jobs/{{ job.id }}/reject-form" hx-target="#reject-modal-slot" hx-swap="innerHTML">Reject…</button>
     {% set posting_url_plain = (job.apply_url or job.url)|safe_url %}
     {% if posting_url_plain %}<a class="btn btn-ghost" href="{{ posting_url_plain }}" target="_blank" rel="noopener noreferrer">Open posting</a>{% endif %}
   </div>

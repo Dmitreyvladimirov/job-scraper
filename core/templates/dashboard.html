@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — JobScraper{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+        integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
+        crossorigin="anonymous"></script>
+{% endblock %}
+{% block content %}
+<h1 style="font-size:34px;margin:0 0 24px">Dashboard</h1>
+
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--color-divider);border-bottom:1px solid var(--color-divider);margin-bottom:36px">
+  <div style="padding:20px 24px 20px 0;border-right:1px solid var(--color-divider)">
+    <div style="font-family:var(--font-heading);font-size:44px;line-height:1;font-feature-settings:'tnum'">{{ totals.runs }}</div>
+    <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:8px">Total runs</div>
+  </div>
+  <div style="padding:20px 24px;border-right:1px solid var(--color-divider)">
+    <div style="font-family:var(--font-heading);font-size:44px;line-height:1;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ totals.qualified }}</div>
+    <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:8px">Qualified jobs</div>
+  </div>
+  <div style="padding:20px 24px;border-right:1px solid var(--color-divider)">
+    <div style="font-family:var(--font-heading);font-size:44px;line-height:1;font-feature-settings:'tnum'">{{ totals.fetched }}</div>
+    <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:8px">Total fetched</div>
+  </div>
+  <div style="padding:20px 0 20px 24px">
+    <div style="font-family:var(--font-heading);font-size:44px;line-height:1;font-feature-settings:'tnum'">{{ totals.gpt_calls }}</div>
+    <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:8px">GPT calls used</div>
+  </div>
+</div>
+
+<div style="margin-bottom:36px">
+  <h6 style="margin:0 0 14px;color:var(--color-accent)">Qualified jobs per day</h6>
+  <canvas id="dailyChart" height="230" style="width:100%;max-height:230px"></canvas>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-bottom:36px;border-top:1px solid var(--color-divider);padding-top:26px">
+  <div>
+    <h6 style="margin:0 0 14px;color:var(--color-accent)">Filter funnel — total</h6>
+    <canvas id="funnelChart" height="210" style="width:100%;max-height:210px"></canvas>
+  </div>
+  <div style="border-left:1px solid var(--color-divider);padding-left:40px">
+    <h6 style="margin:0 0 14px;color:var(--color-accent)">ATS score distribution</h6>
+    <canvas id="scoreChart" height="210" style="width:100%;max-height:210px"></canvas>
+  </div>
+</div>
+
+<div style="margin-bottom:36px;border-top:1px solid var(--color-divider);padding-top:26px">
+  <h6 style="margin:0 0 14px;color:var(--color-accent)">Source performance</h6>
+  <canvas id="sourceChart" height="220" style="width:100%;max-height:220px"></canvas>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;border-top:1px solid var(--color-divider);padding-top:26px;margin-bottom:36px">
+  <div>
+    <h6 style="margin:0 0 8px;color:var(--color-accent)">Top companies found</h6>
+    <table style="width:100%;border-collapse:collapse;font-size:13.5px;font-feature-settings:'tnum'">
+      <thead><tr>
+        <th style="text-align:left;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Company</th>
+        <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Times found</th>
+        <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Top ATS</th>
+      </tr></thead>
+      <tbody>
+        {% for c in top_companies %}
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid var(--color-divider);{% if c.is_artifact %}font-style:italic;color:var(--color-neutral-600){% endif %}">{{ c.company }}</td>
+          <td style="padding:8px 0;border-bottom:1px solid var(--color-divider);text-align:right;color:var(--color-accent-700);font-weight:600">{{ c.cnt }}</td>
+          <td style="padding:8px 0;border-bottom:1px solid var(--color-divider);text-align:right">{{ c.top_score }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if has_artifacts %}<div style="font-size:11.5px;color:var(--color-neutral-600);margin-top:8px;font-style:italic">Rows in italic are parsing artifacts from LinkedIn postings — company name not extracted.</div>{% endif %}
+  </div>
+  <div style="border-left:1px solid var(--color-divider);padding-left:40px">
+    <h6 style="margin:0 0 8px;color:var(--color-accent)">Recent runs</h6>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;font-feature-settings:'tnum'">
+      <thead><tr>
+        <th style="text-align:left;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Time (UTC)</th>
+        <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Fetched</th>
+        <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Qualified</th>
+        <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">GPT</th>
+      </tr></thead>
+      <tbody>
+        {% for r in recent_runs %}
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid var(--color-divider)">{{ r.started_at|string|truncate(16, True, '') }}</td>
+          <td style="padding:8px 0;border-bottom:1px solid var(--color-divider);text-align:right">{{ r.total_fetched }}</td>
+          <td style="padding:8px 0;border-bottom:1px solid var(--color-divider);text-align:right;color:var(--color-accent-700);font-weight:600">{{ r.qualified }}</td>
+          <td style="padding:8px 0;border-bottom:1px solid var(--color-divider);text-align:right">{{ r.gpt_calls }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div style="font-size:12px;color:var(--color-neutral-600);border-top:1px solid var(--color-divider);padding-top:14px;margin-bottom:36px">Theme preference is saved on this device. Charts recolor with the theme.</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;border-top:1px solid var(--color-divider);padding-top:26px;margin-bottom:36px">
+  <div hx-get="/stats/rejection-reasons" hx-trigger="load" hx-swap="innerHTML"></div>
+  <div hx-get="/stats/conversion" hx-trigger="load" hx-swap="innerHTML" style="border-left:1px solid var(--color-divider);padding-left:40px"></div>
+</div>
+
+<div hx-get="/sources" hx-trigger="load" hx-swap="innerHTML" style="border-top:1px solid var(--color-divider);padding-top:26px"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+  var DAILY_LABELS = {{ daily_labels|safe }};
+  var DAILY_FETCHED = {{ daily_fetched|safe }};
+  var DAILY_QUALIFIED = {{ daily_qualified|safe }};
+  var FUNNEL_LABELS = {{ funnel_labels|safe }};
+  var FUNNEL_VALUES = {{ funnel_values|safe }};
+  var SCORE_LABELS = {{ score_labels|safe }};
+  var SCORE_VALUES = {{ score_values|safe }};
+  var SRC_LABELS = {{ src_labels|safe }};
+  var SRC_TOTAL = {{ src_total|safe }};
+  var SRC_QUALIFIED = {{ src_qualified|safe }};
+
+  var _charts = [];
+  function buildCharts() {
+    if (!window.Chart) return;
+    _charts.forEach(function (c) { c.destroy(); });
+    _charts = [];
+    var cs = getComputedStyle(document.body);
+    var v = function (n) { return cs.getPropertyValue(n).trim(); };
+    var accent = v('--color-accent-700') || '#7d5411';
+    var ink = v('--color-neutral-600') || '#777';
+    var dim = v('--color-neutral-400') || '#bab6b6';
+    var grid = document.body.classList.contains('dark') ? 'rgba(232,228,221,.09)' : 'rgba(32,31,29,.08)';
+    Chart.defaults.font.family = 'Lora, serif';
+    Chart.defaults.font.size = 11;
+    function C(id, cfg) { var el = document.getElementById(id); if (el) _charts.push(new Chart(el, cfg)); }
+    var legend = { labels: { color: ink, boxWidth: 12, boxHeight: 12 } };
+    function ax(title) {
+      var scale = { grid: { color: grid }, ticks: { color: ink } };
+      if (title) scale.title = { display: true, text: title, color: ink };
+      return scale;
+    }
+
+    C('dailyChart', {
+      type: 'bar',
+      data: { labels: DAILY_LABELS, datasets: [
+        { label: 'Fetched', data: DAILY_FETCHED, backgroundColor: dim, yAxisID: 'y2' },
+        { label: 'Qualified', data: DAILY_QUALIFIED, backgroundColor: accent, yAxisID: 'y' },
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, scales: {
+        y: Object.assign(ax('Qualified'), { position: 'left' }),
+        y2: Object.assign(ax('Fetched'), { position: 'right', grid: { drawOnChartArea: false } }),
+        x: ax(),
+      }, plugins: { legend: legend } },
+    });
+
+    C('funnelChart', {
+      type: 'bar',
+      data: { labels: FUNNEL_LABELS, datasets: [{ data: FUNNEL_VALUES, backgroundColor: 'rgba(0,0,0,0)', borderColor: accent, borderWidth: 1.5 }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { x: ax(), y: { grid: { display: false }, ticks: { color: ink } } } },
+    });
+
+    C('scoreChart', {
+      type: 'bar',
+      data: { labels: SCORE_LABELS, datasets: [{ data: SCORE_VALUES, backgroundColor: 'rgba(0,0,0,0)', borderColor: accent, borderWidth: 1.5 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { x: { grid: { display: false }, ticks: { color: ink } }, y: ax() } },
+    });
+
+    C('sourceChart', {
+      type: 'bar',
+      data: { labels: SRC_LABELS, datasets: [
+        { label: 'Total fetched', data: SRC_TOTAL, backgroundColor: dim },
+        { label: 'Qualified', data: SRC_QUALIFIED, backgroundColor: accent },
+      ] },
+      options: { responsive: true, maintainAspectRatio: false,
+        scales: { x: { grid: { display: false }, ticks: { color: ink } }, y: ax() },
+        plugins: { legend: legend } },
+    });
+  }
+
+  buildCharts();
+  document.getElementById('dark-toggle').addEventListener('click', function () { setTimeout(buildCharts, 50); });
+</script>
+{% endblock %}

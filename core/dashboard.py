@@ -2,14 +2,14 @@
 import hmac
 import json
 import os
-from html import escape
+import time
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
 import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -65,13 +65,70 @@ def health():
     return {"status": "ok"}
 
 
-def _check_token(token: str):
+COOKIE_NAME = "dashboard_token"
+COOKIE_MAX_AGE = 60 * 60 * 24 * 180  # ~6 months
+
+
+def _authenticate(request: Request) -> None:
+    """Cookie-only — the token never travels in a URL again after /login sets the
+    cookie, closing the Referer-leak / browser-history-leak surface a query-param
+    token had. Log in once at /login; every other route just reads the cookie."""
     if not TOKEN:
         # Belt-and-suspenders: startup should already have refused to boot without a
         # token, but never fail open on a protected endpoint if it somehow got here.
         raise HTTPException(status_code=503, detail="Dashboard misconfigured: DASHBOARD_TOKEN not set")
+    cookie_token = request.cookies.get(COOKIE_NAME, "")
+    if not cookie_token or not hmac.compare_digest(cookie_token, TOKEN):
+        raise HTTPException(status_code=403, detail="Not authenticated — log in at /login")
+
+
+_LOGIN_MAX_ATTEMPTS = 10
+_LOGIN_WINDOW_SECONDS = 300  # 5 minutes
+_login_failures: list[float] = []
+
+
+def _check_login_rate_limit() -> None:
+    """/login is reachable by anyone who finds the Railway URL, unlike the old
+    query-param token which at least required already knowing a secret to even try —
+    hmac.compare_digest defeats timing attacks but does nothing to slow raw guess
+    throughput, so add a simple in-process lockout. Single personal-tool deployment,
+    single process — no need for a shared store across replicas."""
+    now = time.time()
+    while _login_failures and _login_failures[0] < now - _LOGIN_WINDOW_SECONDS:
+        _login_failures.pop(0)
+    if len(_login_failures) >= _LOGIN_MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Too many failed login attempts — try again later")
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_form(request: Request):
+    response = templates.TemplateResponse(request, "login.html", {})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.post("/login")
+def login_submit(token: str = Form(...)):
+    if not TOKEN:
+        raise HTTPException(status_code=503, detail="Dashboard misconfigured: DASHBOARD_TOKEN not set")
+    _check_login_rate_limit()
     if not hmac.compare_digest(token, TOKEN):
+        _login_failures.append(time.time())
         raise HTTPException(status_code=403, detail="Invalid token")
+    redirect = RedirectResponse(url="/dashboard", status_code=302)
+    redirect.set_cookie(
+        COOKIE_NAME, TOKEN, max_age=COOKIE_MAX_AGE,
+        httponly=True, secure=True, samesite="strict",
+    )
+    redirect.headers["Cache-Control"] = "no-store"
+    return redirect
+
+
+@app.get("/logout")
+def logout():
+    redirect = RedirectResponse(url="/login", status_code=302)
+    redirect.delete_cookie(COOKIE_NAME)
+    return redirect
 
 
 def _query(sql: str, params=()) -> list[dict]:
@@ -91,13 +148,23 @@ def _json_js(value) -> str:
 
 
 @app.get("/", response_class=HTMLResponse)
-def root(token: str = Query(default="")):
-    return HTMLResponse(f'<meta http-equiv="refresh" content="0;url=/dashboard?token={quote(token, safe="")}">')
+def root():
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+
+def _is_company_artifact(name: str | None) -> bool:
+    """Some sources (LinkedIn-derived postings) leak consent-banner/UI text into the
+    company field instead of a real name -- flag anything implausibly long or that
+    names the platform itself, so the template can de-emphasize it instead of hiding
+    it (the row is still a real qualified job, just with an unreliable company label)."""
+    if not name:
+        return True
+    return len(name) > 50 or "linkedin" in name.lower()
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(token: str = Query(default="")):
-    _check_token(token)
+def dashboard(request: Request):
+    _authenticate(request)
 
     # --- data queries ---
     totals = _query("""
@@ -151,11 +218,7 @@ def dashboard(token: str = Query(default="")):
     """)
 
     recent_runs = _query("""
-        SELECT started_at, total_fetched, qualified,
-               rejected_low_score as low_score,
-               filtered_role as role, filtered_stale as stale,
-               filtered_dedup as dedup, gpt_calls,
-               sources_json
+        SELECT started_at, total_fetched, qualified, gpt_calls
         FROM runs ORDER BY id DESC LIMIT 15
     """)
 
@@ -164,201 +227,29 @@ def dashboard(token: str = Query(default="")):
         FROM jobs WHERE outcome='qualified' AND company IS NOT NULL
         GROUP BY company ORDER BY cnt DESC, top_score DESC LIMIT 10
     """)
+    for r in top_companies:
+        r["is_artifact"] = _is_company_artifact(r["company"])
 
-    # --- serialize for JS (values come from scraped sources — treat as untrusted) ---
-    daily_labels = _json_js([str(r["day"]) for r in daily])
-    daily_qualified = _json_js([r["qualified"] for r in daily])
-    daily_fetched = _json_js([r["fetched"] for r in daily])
-
-    funnel_labels = _json_js(["Qualified", "Low score", "Wrong role", "Location", "Stale", "Dedup", "GPT limit"])
-    funnel_values = _json_js([
-        funnel["qualified"] or 0, funnel["low_score"] or 0, funnel["role"] or 0,
-        funnel["location"] or 0, funnel["stale"] or 0, funnel["dedup"] or 0, funnel["gpt_limit"] or 0,
-    ])
-
-    src_labels = _json_js([r["source"] for r in by_source])
-    src_qualified = _json_js([r["qualified"] for r in by_source])
-    src_total = _json_js([r["total"] for r in by_source])
-
-    score_labels = _json_js([r["bucket"] for r in score_dist])
-    score_values = _json_js([r["cnt"] for r in score_dist])
-
-    # --- recent runs table rows ---
-    rows_html = ""
-    for r in recent_runs:
-        src = json.loads(r["sources_json"]) if r["sources_json"] else {}
-        src_str = " · ".join(f"{k}: {v}" for k, v in src.items() if v)
-        rows_html += f"""<tr>
-            <td>{escape(str(r['started_at'])[:16])}</td>
-            <td>{r['total_fetched']}</td>
-            <td class="green">{r['qualified']}</td>
-            <td>{r['low_score']}</td>
-            <td>{r['role']}</td>
-            <td>{r['stale']}</td>
-            <td>{r['dedup']}</td>
-            <td>{r['gpt_calls']}</td>
-            <td class="small">{escape(src_str)}</td>
-        </tr>"""
-
-    top_html = "".join(
-        f"<tr><td>{escape(r['company'])}</td><td class='green'>{r['cnt']}</td><td>{r['top_score']}</td></tr>"
-        for r in top_companies
-    )
-
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JobScraper Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          background: #0f1117; color: #e0e0e0; padding: 24px; }}
-  h1 {{ font-size: 20px; font-weight: 600; margin-bottom: 24px; color: #fff; }}
-  h2 {{ font-size: 13px; font-weight: 500; color: #888; text-transform: uppercase;
-        letter-spacing: .05em; margin-bottom: 12px; }}
-  .kpis {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }}
-  .kpi {{ background: #1c1f2b; border-radius: 10px; padding: 20px; }}
-  .kpi .val {{ font-size: 36px; font-weight: 700; color: #fff; line-height: 1; }}
-  .kpi .label {{ font-size: 12px; color: #666; margin-top: 6px; }}
-  .charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }}
-  .chart-box {{ background: #1c1f2b; border-radius: 10px; padding: 20px; }}
-  .chart-box canvas {{ max-height: 220px; }}
-  .wide {{ grid-column: 1 / -1; }}
-  table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-  th {{ text-align: left; color: #555; font-weight: 500; padding: 8px 10px;
-        border-bottom: 1px solid #2a2d3a; }}
-  td {{ padding: 8px 10px; border-bottom: 1px solid #1a1d28; color: #ccc; }}
-  tr:last-child td {{ border-bottom: none; }}
-  .green {{ color: #4ade80; font-weight: 600; }}
-  .small {{ font-size: 11px; color: #555; }}
-  .section {{ background: #1c1f2b; border-radius: 10px; padding: 20px; margin-bottom: 20px; }}
-  @media(max-width:700px) {{ .kpis,.charts {{ grid-template-columns: 1fr 1fr; }} }}
-</style>
-</head>
-<body>
-<h1>JobScraper Dashboard</h1>
-
-<div class="kpis">
-  <div class="kpi"><div class="val">{totals['runs']}</div><div class="label">Total runs</div></div>
-  <div class="kpi"><div class="val green">{totals['qualified']}</div><div class="label">Qualified jobs</div></div>
-  <div class="kpi"><div class="val">{totals['fetched']}</div><div class="label">Total fetched</div></div>
-  <div class="kpi"><div class="val">{totals['gpt_calls']}</div><div class="label">GPT calls used</div></div>
-</div>
-
-<div class="charts">
-  <div class="chart-box wide">
-    <h2>Qualified jobs per day</h2>
-    <canvas id="dailyChart"></canvas>
-  </div>
-  <div class="chart-box">
-    <h2>Filter funnel (total)</h2>
-    <canvas id="funnelChart"></canvas>
-  </div>
-  <div class="chart-box">
-    <h2>ATS score distribution</h2>
-    <canvas id="scoreChart"></canvas>
-  </div>
-  <div class="chart-box wide">
-    <h2>Source performance</h2>
-    <canvas id="sourceChart"></canvas>
-  </div>
-</div>
-
-<div class="section">
-  <h2>Top companies found</h2>
-  <table>
-    <tr><th>Company</th><th>Times found</th><th>Top ATS</th></tr>
-    {top_html}
-  </table>
-</div>
-
-<div class="section">
-  <h2>Recent runs</h2>
-  <table>
-    <tr><th>Time (UTC)</th><th>Fetched</th><th>Qualified</th><th>Low score</th>
-        <th>Role</th><th>Stale</th><th>Dedup</th><th>GPT</th><th>Sources</th></tr>
-    {rows_html}
-  </table>
-</div>
-
-<div class="section" hx-get="/stats/rejection-reasons?token={quote(token, safe="")}" hx-trigger="load" hx-swap="innerHTML">
-  <h2>Rejection reasons</h2>
-</div>
-
-<div class="section" hx-get="/stats/conversion?token={quote(token, safe="")}" hx-trigger="load" hx-swap="innerHTML">
-  <h2>Qualified → applied</h2>
-</div>
-
-<div class="section" hx-get="/sources?token={quote(token, safe="")}" hx-trigger="load" hx-swap="innerHTML">
-  <h2>Sources</h2>
-</div>
-
-<script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"
-        integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
-        crossorigin="anonymous"></script>
-<link rel="stylesheet" href="/static/classical.css">
-<script>
-const C = (id, cfg) => new Chart(document.getElementById(id), cfg);
-const grid = {{ color: '#2a2d3a' }};
-const font = {{ color: '#888' }};
-
-C('dailyChart', {{
-  type: 'bar',
-  data: {{
-    labels: {daily_labels},
-    datasets: [
-      {{ label: 'Fetched', data: {daily_fetched}, backgroundColor: '#2a2d3a', yAxisID: 'y2' }},
-      {{ label: 'Qualified', data: {daily_qualified}, backgroundColor: '#4ade80', yAxisID: 'y' }},
-    ]
-  }},
-  options: {{ responsive: true, scales: {{
-    y:  {{ grid, ticks: font, position: 'left',  title: {{ display:true, text:'Qualified', color:'#888' }} }},
-    y2: {{ grid: {{drawOnChartArea:false}}, ticks: font, position: 'right', title: {{ display:true, text:'Fetched', color:'#888' }} }},
-    x:  {{ grid, ticks: font }}
-  }}, plugins: {{ legend: {{ labels: {{ color:'#888' }} }} }} }}
-}});
-
-C('funnelChart', {{
-  type: 'bar',
-  data: {{
-    labels: {funnel_labels},
-    datasets: [{{ data: {funnel_values},
-      backgroundColor: ['#4ade80','#f87171','#fb923c','#60a5fa','#a78bfa','#94a3b8','#475569'] }}]
-  }},
-  options: {{ indexAxis:'y', responsive:true, plugins:{{ legend:{{display:false}} }},
-    scales: {{ x: {{ grid, ticks: font }}, y: {{ grid, ticks: font }} }} }}
-}});
-
-C('scoreChart', {{
-  type: 'bar',
-  data: {{
-    labels: {score_labels},
-    datasets: [{{ data: {score_values}, backgroundColor: '#818cf8' }}]
-  }},
-  options: {{ responsive:true, plugins:{{ legend:{{display:false}} }},
-    scales: {{ x: {{ grid, ticks: font }}, y: {{ grid, ticks: font }} }} }}
-}});
-
-C('sourceChart', {{
-  type: 'bar',
-  data: {{
-    labels: {src_labels},
-    datasets: [
-      {{ label: 'Total fetched', data: {src_total}, backgroundColor: '#2a2d3a' }},
-      {{ label: 'Qualified', data: {src_qualified}, backgroundColor: '#4ade80' }},
-    ]
-  }},
-  options: {{ responsive:true, scales: {{
-    x: {{ grid, ticks: font }}, y: {{ grid, ticks: font }}
-  }}, plugins: {{ legend: {{ labels: {{ color:'#888' }} }} }} }}
-}});
-</script>
-</body>
-</html>"""
-    return HTMLResponse(html)
+    return templates.TemplateResponse(request, "dashboard.html", {
+        "active": "dashboard",
+        "totals": totals,
+        "recent_runs": recent_runs,
+        "top_companies": top_companies,
+        "has_artifacts": any(r["is_artifact"] for r in top_companies),
+        "daily_labels": _json_js([str(r["day"]) for r in daily]),
+        "daily_qualified": _json_js([r["qualified"] for r in daily]),
+        "daily_fetched": _json_js([r["fetched"] for r in daily]),
+        "funnel_labels": _json_js(["Qualified", "Low score", "Wrong role", "Location", "Stale", "Dedup", "GPT limit"]),
+        "funnel_values": _json_js([
+            funnel["qualified"] or 0, funnel["low_score"] or 0, funnel["role"] or 0,
+            funnel["location"] or 0, funnel["stale"] or 0, funnel["dedup"] or 0, funnel["gpt_limit"] or 0,
+        ]),
+        "score_labels": _json_js([r["bucket"] for r in score_dist]),
+        "score_values": _json_js([r["cnt"] for r in score_dist]),
+        "src_labels": _json_js([r["source"] for r in by_source]),
+        "src_qualified": _json_js([r["qualified"] for r in by_source]),
+        "src_total": _json_js([r["total"] for r in by_source]),
+    })
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -370,19 +261,19 @@ _VALID_SORTS = {"newest", "score", "source"}
 
 
 @app.get("/review", response_class=HTMLResponse)
-def review(request: Request, token: str = Query(default=""), sort: str = Query(default="newest")):
-    _check_token(token)
+def review(request: Request, sort: str = Query(default="newest")):
+    _authenticate(request)
     if sort not in _VALID_SORTS:
         sort = "newest"
     jobs = db.get_review_jobs(sort=sort)
     return templates.TemplateResponse(request, "card_review.html", {
-        "jobs": jobs, "sort": sort, "token": token, "active": "review",
+        "jobs": jobs, "sort": sort, "active": "review",
     })
 
 
 @app.get("/kanban", response_class=HTMLResponse)
-def kanban(request: Request, token: str = Query(default="")):
-    _check_token(token)
+def kanban(request: Request):
+    _authenticate(request)
     jobs_by_status = db.get_kanban_jobs()
     return templates.TemplateResponse(request, "kanban.html", {
         "jobs_by_status": jobs_by_status,
@@ -391,7 +282,7 @@ def kanban(request: Request, token: str = Query(default="")):
         "status_labels_json": json.dumps(STATUS_LABELS),
         "statuses_json": json.dumps(CURRENT_STATUSES),
         "reason_labels": REJECTION_REASON_LABELS,
-        "token": token, "active": "kanban",
+        "active": "kanban",
     })
 
 
@@ -399,11 +290,10 @@ def kanban(request: Request, token: str = Query(default="")):
 def change_job_status(
     request: Request,
     job_id: int,
-    token: str = Query(default=""),
     new_status: str = Form(...),
     rejection_reason: str | None = Form(default=None),
 ):
-    _check_token(token)
+    _authenticate(request)
     try:
         db.update_job_status(job_id, new_status, rejection_reason=rejection_reason)
     except ValueError as e:
@@ -413,20 +303,20 @@ def change_job_status(
     if new_status == "found" or (job and job["current_status"] == "found"):
         # Still/again in the review list — return the row fragment (HTMX target
         # for /review is a <details> row; /kanban's JS ignores the body on success).
-        return templates.TemplateResponse(request, "partials/card.html", {"job": job, "token": token})
+        return templates.TemplateResponse(request, "partials/card.html", {"job": job})
     # Moved out of review — swap to an empty node so the row disappears from /review's list.
     return HTMLResponse(f'<div id="job-{job_id}"></div>')
 
 
 @app.get("/jobs/{job_id}/reject-form", response_class=HTMLResponse)
-def reject_form(request: Request, job_id: int, token: str = Query(default="")):
-    _check_token(token)
+def reject_form(request: Request, job_id: int):
+    _authenticate(request)
     job = db.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Unknown job id")
     reasons = [(r, REJECTION_REASON_LABELS[r]) for r in USER_REJECTION_REASONS]
     return templates.TemplateResponse(request, "partials/rejection_form.html", {
-        "job": job, "reasons": reasons, "token": token,
+        "job": job, "reasons": reasons,
     })
 
 
@@ -444,11 +334,11 @@ def _parse_date_range(date_from: str | None, date_to: str | None) -> tuple[str |
 
 @app.get("/stats/rejection-reasons", response_class=HTMLResponse)
 def stats_rejection_reasons(
-    request: Request, token: str = Query(default=""),
+    request: Request,
     date_from: str | None = Query(default=None, alias="from"),
     date_to: str | None = Query(default=None, alias="to"),
 ):
-    _check_token(token)
+    _authenticate(request)
     date_from, date_to = _parse_date_range(date_from, date_to)
     counts = db.get_rejection_reason_counts(date_from, date_to)
     return templates.TemplateResponse(request, "partials/stats_rejection_reasons.html", {
@@ -458,31 +348,31 @@ def stats_rejection_reasons(
 
 @app.get("/stats/conversion", response_class=HTMLResponse)
 def stats_conversion(
-    request: Request, token: str = Query(default=""),
+    request: Request,
     date_from: str | None = Query(default=None, alias="from"),
     date_to: str | None = Query(default=None, alias="to"),
 ):
-    _check_token(token)
+    _authenticate(request)
     date_from, date_to = _parse_date_range(date_from, date_to)
     stats = db.get_conversion_stats(date_from, date_to)
     return templates.TemplateResponse(request, "partials/stats_conversion.html", {"stats": stats})
 
 
 @app.get("/sources", response_class=HTMLResponse)
-def sources_panel(request: Request, token: str = Query(default="")):
-    _check_token(token)
+def sources_panel(request: Request):
+    _authenticate(request)
     sources = db.get_sources_summary()
     return templates.TemplateResponse(request, "partials/sources_panel.html", {
-        "sources": sources, "token": token,
+        "sources": sources,
     })
 
 
 @app.post("/sources/{name}/toggle", response_class=HTMLResponse)
-def toggle_source_route(request: Request, name: str, token: str = Query(default="")):
-    _check_token(token)
+def toggle_source_route(request: Request, name: str):
+    _authenticate(request)
     if not db.toggle_source(name):
         raise HTTPException(status_code=404, detail=f"Unknown source: {name}")
     sources = db.get_sources_summary()
     return templates.TemplateResponse(request, "partials/sources_panel.html", {
-        "sources": sources, "token": token,
+        "sources": sources,
     })

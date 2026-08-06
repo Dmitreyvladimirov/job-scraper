@@ -15,7 +15,7 @@
         <td style="font-feature-settings:'tnum'">{{ s.applied_from }}</td>
         <td>
           <button class="btn {% if s.enabled %}btn-secondary{% else %}btn-ghost{% endif %}" style="font-size:12px;padding:4px 10px"
-            hx-post="/sources/{{ s.source|urlencode }}/toggle?token={{ token }}" hx-target="#sources-panel" hx-swap="outerHTML">
+            hx-post="/sources/{{ s.source|urlencode }}/toggle" hx-target="#sources-panel" hx-swap="outerHTML">
             {{ 'On' if s.enabled else 'Off' }}
           </button>
         </td>

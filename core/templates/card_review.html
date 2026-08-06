@@ -6,9 +6,9 @@
   <span style="font-size:13px;color:color-mix(in srgb,var(--color-text) 55%,transparent);font-feature-settings:'tnum'">{{ jobs|length }} found · awaiting review</span>
   <span style="margin-left:auto"></span>
   <div class="seg">
-    <a class="seg-opt" href="/review?token={{ token }}&sort=newest" style="{% if sort == 'newest' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Newest</a>
-    <a class="seg-opt" href="/review?token={{ token }}&sort=score" style="{% if sort == 'score' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Score</a>
-    <a class="seg-opt" href="/review?token={{ token }}&sort=source" style="{% if sort == 'source' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Source</a>
+    <a class="seg-opt" href="/review?sort=newest" style="{% if sort == 'newest' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Newest</a>
+    <a class="seg-opt" href="/review?sort=score" style="{% if sort == 'score' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Score</a>
+    <a class="seg-opt" href="/review?sort=source" style="{% if sort == 'source' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Source</a>
   </div>
 </div>
 

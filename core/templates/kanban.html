@@ -91,7 +91,6 @@
 <script>
   var STATUS_LABELS = {{ status_labels_json|safe }};
   var STATUSES = {{ statuses_json|safe }};
-  var TOKEN = "{{ token }}";
 
   // Desktop drag-and-drop
   document.querySelectorAll('.kanban-cards').forEach(function (col) {
@@ -108,11 +107,11 @@
 
   function moveJob(jobId, newStatus, cardEl) {
     if (newStatus === 'rejected') {
-      htmx.ajax('GET', '/jobs/' + jobId + '/reject-form?token=' + TOKEN, {target: '#reject-modal-slot', swap: 'innerHTML'});
+      htmx.ajax('GET', '/jobs/' + jobId + '/reject-form', {target: '#reject-modal-slot', swap: 'innerHTML'});
       if (cardEl) cardEl.remove();
       return;
     }
-    fetch('/jobs/' + jobId + '/status?token=' + TOKEN, {
+    fetch('/jobs/' + jobId + '/status', {
       method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: 'new_status=' + encodeURIComponent(newStatus)
     }).then(function (r) { if (!r.ok) location.reload(); });
