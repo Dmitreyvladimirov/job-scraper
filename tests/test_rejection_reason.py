@@ -20,6 +20,13 @@ def test_geo_restricted_auto_not_settable_via_user_form():
     assert validate_status_change("found", "rejected", "geo_restricted_auto") is not None
 
 
+def test_old_not_settable_via_user_form():
+    # "old" is set by bulk maintenance scripts (Notion sync, stale-backlog cleanup)
+    # reconciling cards that were never individually reviewed — not a reason a human
+    # picks in the reject form.
+    assert validate_status_change("found", "rejected", "old") is not None
+
+
 def test_unknown_reason_is_invalid():
     assert validate_status_change("found", "rejected", "made_up_reason") is not None
 

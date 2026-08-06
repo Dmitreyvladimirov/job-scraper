@@ -99,27 +99,32 @@ DOMAIN_COLORS = {
     "HealthTech": "25",
 }
 
-# Rejection reasons — 6 categories (FRONTEND_DESIGN_BRIEF.md). geo_restricted_auto is
-# set programmatically by the existing ResumeBuilder pipeline script, never through the
-# user-facing rejection form.
+# Rejection reasons — 7 categories (FRONTEND_DESIGN_BRIEF.md, + "old"). geo_restricted_auto
+# is set programmatically by the existing ResumeBuilder pipeline script; "old" is set by
+# bulk maintenance scripts (Notion status sync, stale-backlog cleanup) reconciling cards
+# that were never individually reviewed — neither is selectable through the user-facing
+# rejection form, both are excluded from USER_REJECTION_REASONS below.
 REJECTION_REASONS = [
     "low_score_after_review",
     "remote_one_country",
     "not_remote_at_all",
     "inactive_closed",
     "bad_in_general",
+    "old",
     "geo_restricted_auto",
 ]
 REJECTION_REASON_LABELS = {
-    "low_score_after_review": "Плохо подошла по скорингу после проверки",
-    "remote_one_country": "Ремоут, но только в одной стране",
-    "not_remote_at_all": "Вакансия не удалённая вообще",
-    "inactive_closed": "Вакансия неактивна / закрыта",
-    "bad_in_general": "Вакансия плохая в принципе",
-    "geo_restricted_auto": "GEO_RESTRICTED (авто-LLM)",
+    "low_score_after_review": "Low score after manual review",
+    "remote_one_country": "Remote, but only within one country",
+    "not_remote_at_all": "Not remote at all",
+    "inactive_closed": "Inactive / closed posting",
+    "bad_in_general": "Bad fit in general",
+    "old": "Old — bulk-rejected, never individually reviewed",
+    "geo_restricted_auto": "Geo-restricted (auto, LLM-flagged)",
 }
-# Reasons selectable through the user-facing rejection form — excludes geo_restricted_auto.
-USER_REJECTION_REASONS = [r for r in REJECTION_REASONS if r != "geo_restricted_auto"]
+# Reasons selectable through the user-facing rejection form — excludes the two
+# system-only reasons (geo_restricted_auto, old).
+USER_REJECTION_REASONS = [r for r in REJECTION_REASONS if r not in ("geo_restricted_auto", "old")]
 
 
 def is_valid_transition(old_status: str, new_status: str) -> bool:
@@ -152,6 +157,6 @@ def validate_status_change(old_status: str, new_status: str, rejection_reason: s
     if new_status == "rejected":
         if rejection_reason not in REJECTION_REASONS:
             return "rejection_reason is required and must be one of the known categories"
-        if rejection_reason == "geo_restricted_auto":
-            return "geo_restricted_auto cannot be set through this endpoint"
+        if rejection_reason in ("geo_restricted_auto", "old"):
+            return f"{rejection_reason} cannot be set through this endpoint"
     return None

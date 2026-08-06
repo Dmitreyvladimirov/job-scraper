@@ -10,7 +10,7 @@
         <span>{{ reason_labels.get(row.rejection_reason, row.rejection_reason or 'unknown') }}{% if row.rejection_reason == 'geo_restricted_auto' %} (auto-LLM){% endif %}</span>
         <b>{{ row.cnt }}</b>
       </div>
-      {% if row.rejection_reason == 'geo_restricted_auto' %}
+      {% if row.rejection_reason in ('geo_restricted_auto', 'old') %}
       <div style="height:5px;border:1px solid var(--color-accent);background:repeating-linear-gradient(45deg,var(--color-accent),var(--color-accent) 1px,transparent 1px,transparent 4px);width:{{ (100 * row.cnt / max_cnt)|round(1) }}%"></div>
       {% else %}
       <div style="height:5px;background:var(--color-accent);width:{{ (100 * row.cnt / max_cnt)|round(1) }}%"></div>
@@ -19,5 +19,5 @@
     {% endfor %}
     {% if not counts %}<p class="text-muted">No rejections in this range yet.</p>{% endif %}
   </div>
-  <div style="font-size:11px;color:var(--color-neutral-600);margin-top:10px">Hatched = set programmatically by the LLM pipeline; solid = manual decisions.</div>
+  <div style="font-size:11px;color:var(--color-neutral-600);margin-top:10px">Hatched = never individually reviewed (auto-LLM geo flag, or bulk-rejected as old); solid = an actual manual decision.</div>
 </div>
