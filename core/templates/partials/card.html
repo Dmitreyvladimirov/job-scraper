@@ -11,12 +11,15 @@
       </div>
       <div style="display:flex;align-items:center;gap:14px;margin-top:4px;font-size:12px;color:var(--color-neutral-600);flex-wrap:wrap">
         <span>{{ job.source }}</span>
-        {% if job.domain %}<span>{{ job.domain }}</span>{% endif %}
-        {% if job.logged_at %}<span>Found {{ job.logged_at.strftime('%d.%m.%Y') }}</span>{% endif %}
-        {% if job.applied_at %}<span>Applied {{ job.applied_at.strftime('%d.%m.%Y') }}</span>{% endif %}
+        {% for t in domain_tags(job.domain) %}<span class="{{ t.class }}" style="font-size:10.5px;padding:1px 7px;{{ t.style }}">{{ t.name }}</span>{% endfor %}
         {% if job.role_score is none %}
           <span style="font-style:italic;color:var(--color-neutral-500)">No breakdown or keywords recorded for this vacancy</span>
         {% endif %}
+      </div>
+      <div style="display:flex;gap:10px;margin-top:5px;font-size:11px;font-feature-settings:'tnum';color:var(--color-neutral-600)">
+        {% if job.published %}<span>pub {{ job.published|short_date }}</span>{% endif %}
+        {% if job.logged_at %}<span>found {{ job.logged_at|short_date }}</span>{% endif %}
+        {% if job.applied_at %}<span style="color:var(--color-accent-700);font-weight:600">applied {{ job.applied_at|short_date }}</span>{% else %}<span style="font-style:italic">not applied</span>{% endif %}
       </div>
     </div>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-500)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="m6 9 6 6 6-6"></path></svg>

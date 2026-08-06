@@ -2,16 +2,25 @@
 {% block title %}Kanban — JobScraper{% endblock %}
 {% block head %}
 <style>
-  .kanban-desktop { display: grid; grid-template-columns: repeat(7, 1fr); padding: 4px 0 26px; }
-  .kanban-col { padding: 0 12px; border-right: 1px solid var(--color-divider); min-height: 120px; }
+  .kanban-desktop { display: grid; grid-template-columns: repeat(6, 1fr); padding: 4px 0 10px; }
+  .kanban-desktop.rejected-grid { grid-template-columns: repeat(6, 1fr); }
+  .kanban-col { padding: 0 12px; border-right: 1px solid var(--color-divider); min-height: 60px; }
   .kanban-col:last-child { border-right: none; }
-  .kanban-col-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--color-text); padding-bottom: 7px; margin-bottom: 12px; }
-  .kanban-col-head.is-terminal { border-bottom-color: var(--color-neutral-400); }
+  .kanban-col-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 7px; margin-bottom: 12px; }
+  .band-active .kanban-col-head { border-bottom: 1px solid var(--color-text); }
+  .band-rejected .kanban-col-head { border-bottom: 1px solid var(--color-divider); }
+  .band-rejected .kanban-col-head span:first-child { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--color-neutral-600); }
   .kanban-cards { display: grid; gap: 9px; min-height: 40px; }
+  .kanban-empty { border: 1px dashed var(--color-divider); border-radius: var(--radius-md); padding: 14px 10px; text-align: center; font-size: 11.5px; color: var(--color-neutral-500); }
+  .band-head { display: flex; align-items: center; gap: 10px; padding: 12px 0 10px; cursor: pointer; user-select: none; }
+  .band-head:hover .band-chevron { color: var(--color-accent); }
+  .band-chevron { color: var(--color-neutral-500); transition: transform .15s; flex: none; }
+  .band-collapsed .band-chevron { transform: rotate(-90deg); }
+  .band-collapsed .kanban-desktop { display: none; }
   .kanban-mobile { display: none; }
   .status-chip { min-height: 44px; padding: 0 14px; }
   @media (max-width: 900px) {
-    .kanban-desktop { display: none; }
+    .kanban-desktop { display: none !important; }
     .kanban-mobile { display: block; }
   }
   #status-sheet { position: fixed; left: 0; right: 0; bottom: 0; background: var(--color-surface);
@@ -25,60 +34,114 @@
 </style>
 {% endblock %}
 {% block content %}
-<h2 style="font-size:29px;margin:6px 0 18px">Kanban</h2>
+<div id="kanban-board">
+{% if q %}
+<div style="display:flex;align-items:center;gap:10px;padding:8px 0;margin-bottom:10px;font-size:12.5px;color:var(--color-neutral-600);font-feature-settings:'tnum'">
+  <span>Matches for <b style="color:var(--color-text)">“{{ q }}”</b> — {{ active_total }} active · {{ rejected_total }} rejected</span>
+  <a class="btn btn-ghost" href="/kanban" style="font-size:12px;padding:3px 9px">Clear</a>
+</div>
+{% endif %}
 
-<div class="kanban-desktop">
-  {% for status in statuses %}
-  <div class="kanban-col">
-    <div class="kanban-col-head {% if status == 'rejected' %}is-terminal{% endif %}">
-      <span style="font-family:var(--font-heading);font-weight:600;font-size:15px;{% if status == 'offer' %}color:var(--color-accent-700){% elif status == 'rejected' %}color:var(--color-neutral-600){% endif %}">{{ status_labels[status] }}</span>
-      <span style="font-size:12px;font-feature-settings:'tnum';color:{% if status == 'offer' %}var(--color-accent-700){% else %}var(--color-neutral-600){% endif %}">{{ jobs_by_status[status]|length }}</span>
-    </div>
-    <div class="kanban-cards" data-status="{{ status }}">
-      {% for job in jobs_by_status[status] %}
-      <div class="card" data-job-id="{{ job.id }}" style="padding:11px;gap:5px;cursor:grab{% if status == 'rejected' %};opacity:.75{% endif %}">
-        <div style="font-family:var(--font-heading);font-weight:600;font-size:14.5px;line-height:1.25">{{ job.title }}</div>
-        <div style="font-size:11.5px;color:var(--color-neutral-700)">{{ job.company or '—' }}</div>
-        <div style="font-size:10.5px;color:var(--color-neutral-500);display:flex;gap:8px;flex-wrap:wrap">
-          {% if job.logged_at %}<span>Found {{ job.logged_at.strftime('%d.%m.%Y') }}</span>{% endif %}
-          {% if job.applied_at %}<span>Applied {{ job.applied_at.strftime('%d.%m.%Y') }}</span>{% endif %}
-        </div>
-        <div class="card-meta">
-          <span style="color:var(--color-accent-700);font-weight:600;font-feature-settings:'tnum'">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
-          {% if status == 'rejected' and job.rejection_reason %}<span class="tag tag-neutral" style="align-self:start">{{ reason_labels.get(job.rejection_reason, job.rejection_reason) }}</span>{% endif %}
-        </div>
+<div class="band-active">
+  <div class="kanban-desktop">
+    {% for status in funnel_order %}
+    <div class="kanban-col">
+      <div class="kanban-col-head">
+        <span style="font-family:var(--font-heading);font-weight:600;font-size:14.5px;{% if status == 'offer' %}color:var(--color-accent-700){% endif %}">{{ status_labels[status] }}</span>
+        <span style="font-size:12px;font-feature-settings:'tnum';color:{% if status == 'offer' %}var(--color-accent-700){% else %}var(--color-neutral-600){% endif %}">{{ board.active[status]|length }}</span>
       </div>
-      {% endfor %}
+      <div class="kanban-cards" data-status="{{ status }}">
+        {% for job in board.active[status] %}
+        <div class="card" data-job-id="{{ job.id }}" style="padding:10px;gap:5px;cursor:pointer" onclick="openDetail({{ job.id }})">
+          <div style="font-family:var(--font-heading);font-weight:600;font-size:14px;line-height:1.25">{{ job.title }}</div>
+          <div style="font-size:11px;color:var(--color-neutral-700)">{{ job.company or '—' }}</div>
+          {% set tags = domain_tags(job.domain) %}
+          {% if tags %}<div style="display:flex;flex-wrap:wrap;gap:4px">{% for t in tags %}<span class="{{ t.class }}" style="font-size:10.5px;padding:1px 7px;{{ t.style }}">{{ t.name }}</span>{% endfor %}</div>{% endif %}
+          <div class="card-meta" style="font-size:11px;font-feature-settings:'tnum'">
+            <span style="color:var(--color-accent-700);font-weight:600">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
+            {% if job.logged_at %}<span>·</span><span>{{ job.logged_at|short_date }}</span>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+        {% if not board.active[status] %}<div class="kanban-empty">Empty</div>{% endif %}
+      </div>
     </div>
+    {% endfor %}
   </div>
-  {% endfor %}
+</div>
+
+<div class="band-rejected band-collapsed" id="rejected-band">
+  <div class="band-head" onclick="toggleRejectedBand()">
+    <svg class="band-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+    <span style="font-family:var(--font-heading);font-weight:600;font-size:17px;color:var(--color-neutral-700)">Rejected</span>
+    <span style="font-size:12.5px;color:var(--color-neutral-600);font-feature-settings:'tnum'">{{ rejected_total }}{% if rejected_breakdown %} — {{ rejected_breakdown|join(' · ') }}{% endif %}</span>
+  </div>
+  <div class="kanban-desktop">
+    {% for status in funnel_order %}
+    <div class="kanban-col">
+      <div class="kanban-col-head">
+        <span>from {{ status_labels[status] }}</span>
+        <span style="font-size:12px;font-feature-settings:'tnum';color:var(--color-neutral-600)">{{ board.rejected[status]|length }}</span>
+      </div>
+      <div class="kanban-cards">
+        {% for job in board.rejected[status] %}
+        <div class="card" data-job-id="{{ job.id }}" style="padding:10px;gap:5px;opacity:.8;cursor:pointer" onclick="openDetail({{ job.id }})">
+          <div style="font-family:var(--font-heading);font-weight:600;font-size:14px;line-height:1.25">{{ job.title }}</div>
+          <div style="font-size:11px;color:var(--color-neutral-700)">{{ job.company or '—' }} · {{ job.ats_score if job.ats_score is not none else '—' }}</div>
+          {% if job.rejection_reason %}<span class="tag tag-neutral" style="align-self:start;font-size:10.5px">{{ reason_labels.get(job.rejection_reason, job.rejection_reason) }}</span>{% endif %}
+        </div>
+        {% endfor %}
+        {% if not board.rejected[status] %}<div class="kanban-empty">—</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
 </div>
 
 <div class="kanban-mobile">
   <div class="seg" style="font-size:12px;overflow-x:auto;max-width:100%;margin-bottom:14px">
-    {% for status in statuses %}
-    <span class="seg-opt mobile-tab" data-tab="{{ status }}" style="padding:5px 9px;white-space:nowrap">{{ status_labels[status] }} {{ jobs_by_status[status]|length }}</span>
+    {% for status in funnel_order %}
+    <span class="seg-opt mobile-tab" data-tab="{{ status }}" style="padding:5px 9px;white-space:nowrap">{{ status_labels[status] }} {{ board.active[status]|length }}</span>
     {% endfor %}
+    <span class="seg-opt mobile-tab" data-tab="rejected" style="padding:5px 9px;white-space:nowrap">Rejected {{ rejected_total }}</span>
   </div>
-  {% for status in statuses %}
+  {% for status in funnel_order %}
   <div class="mobile-panel" data-panel="{{ status }}" style="display:none">
     <div style="display:grid;gap:10px">
-      {% for job in jobs_by_status[status] %}
-      <div class="card" style="padding:12px;gap:5px">
+      {% for job in board.active[status] %}
+      <div class="card" style="padding:12px;gap:5px" onclick="openDetail({{ job.id }})">
         <div style="display:flex;justify-content:space-between;gap:8px">
           <div style="font-family:var(--font-heading);font-weight:600;font-size:15.5px">{{ job.title }} — {{ job.company or '—' }}</div>
           <span style="font-family:var(--font-heading);font-weight:600;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:11.5px;color:var(--color-neutral-600)">{{ job.source }}</span>
-          <span class="tag tag-outline status-chip" onclick="openStatusSheet({{ job.id }}, {{ job.title|tojson }}, {{ status|tojson }})">{{ status_labels[status] }} ▾</span>
+          <span class="tag tag-outline status-chip" onclick="event.stopPropagation();openStatusSheet({{ job.id }}, {{ job.title|tojson }}, {{ status|tojson }})">{{ status_labels[status] }} ▾</span>
         </div>
       </div>
       {% endfor %}
-      {% if not jobs_by_status[status] %}<p class="text-muted" style="text-align:center;padding:20px 0">Nothing here.</p>{% endif %}
+      {% if not board.active[status] %}<p class="text-muted" style="text-align:center;padding:20px 0">Nothing here.</p>{% endif %}
     </div>
   </div>
   {% endfor %}
+  <div class="mobile-panel" data-panel="rejected" style="display:none">
+    <div style="display:grid;gap:10px">
+      {% for status in funnel_order %}{% for job in board.rejected[status] %}
+      <div class="card" style="padding:12px;gap:5px;opacity:.85" onclick="openDetail({{ job.id }})">
+        <div style="display:flex;justify-content:space-between;gap:8px">
+          <div style="font-family:var(--font-heading);font-weight:600;font-size:15.5px">{{ job.title }} — {{ job.company or '—' }}</div>
+          <span style="font-family:var(--font-heading);font-weight:600;font-feature-settings:'tnum';color:var(--color-accent-500)">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11.5px;color:var(--color-neutral-600)">from {{ status_labels[status] }}</span>
+          {% if job.rejection_reason %}<span class="tag tag-neutral" style="font-size:10.5px">{{ reason_labels.get(job.rejection_reason, job.rejection_reason) }}</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}{% endfor %}
+      {% if not rejected_total %}<p class="text-muted" style="text-align:center;padding:20px 0">Nothing here.</p>{% endif %}
+    </div>
+  </div>
 </div>
 
 <dialog id="status-sheet">
@@ -86,14 +149,16 @@
   <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:8px" id="sheet-heading">Move to</div>
   <div id="sheet-options"></div>
 </dialog>
+<div id="detail-modal-slot"></div>
 {% endblock %}
 {% block scripts %}
 <script>
   var STATUS_LABELS = {{ status_labels_json|safe }};
   var STATUSES = {{ statuses_json|safe }};
 
-  // Desktop drag-and-drop
-  document.querySelectorAll('.kanban-cards').forEach(function (col) {
+  // Desktop drag-and-drop — active band only; rejected cards are read-only (restore
+  // happens through the detail peek modal, not drag-and-drop).
+  document.querySelectorAll('.band-active .kanban-cards').forEach(function (col) {
     new Sortable(col, {
       group: 'kanban', animation: 150,
       onEnd: function (evt) {
@@ -117,6 +182,27 @@
     }).then(function (r) { if (!r.ok) location.reload(); });
   }
 
+  // Card peek modal
+  function openDetail(jobId) {
+    htmx.ajax('GET', '/jobs/' + jobId + '/detail', {target: '#detail-modal-slot', swap: 'innerHTML'});
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var dlg = document.getElementById('job-detail-dialog');
+    if (dlg) dlg.remove();
+  });
+
+  // Rejected band collapse — persisted per device
+  var rejectedBand = document.getElementById('rejected-band');
+  function toggleRejectedBand() {
+    rejectedBand.classList.toggle('band-collapsed');
+    localStorage.setItem('kanban-rejected-collapsed', rejectedBand.classList.contains('band-collapsed') ? '1' : '0');
+  }
+  (function () {
+    var saved = localStorage.getItem('kanban-rejected-collapsed');
+    if (saved === '0') rejectedBand.classList.remove('band-collapsed');
+  })();
+
   // Mobile tabs
   var tabs = document.querySelectorAll('.mobile-tab');
   function showTab(status) {
@@ -128,7 +214,7 @@
     });
   }
   tabs.forEach(function (t) { t.addEventListener('click', function () { showTab(t.getAttribute('data-tab')); }); });
-  if (STATUSES.length) showTab(STATUSES[0]);
+  showTab('found');
 
   // Mobile bottom sheet
   var sheet = document.getElementById('status-sheet');

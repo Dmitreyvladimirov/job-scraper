@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import psycopg2
 import psycopg2.extras
-from config import CURRENT_STATUSES
+from config import CURRENT_STATUSES, FUNNEL_ORDER
 from utils import normalize_job_key
 
 logger = logging.getLogger(__name__)
@@ -303,27 +303,72 @@ def get_review_jobs(sort: str = "newest") -> list[dict]:
         conn.close()
 
 
-def get_kanban_jobs() -> dict[str, list[dict]]:
-    """All statuses, grouped — the funnel columns (1f shows 'Found' as the first
-    column too, same cards /review lists, just as an overview here)."""
+def get_kanban_jobs(q: str | None = None) -> dict[str, dict[str, list[dict]]]:
+    """Two bands (design_handoff_review_ui Turn 3): 'active' — the live funnel
+    columns — and 'rejected', grouped by the stage a job was rejected FROM (read
+    off status_log's last old_status -> 'rejected' transition, not current_status,
+    which is just 'rejected' for all of them). Every current_status='rejected' row
+    went through update_job_status(), which always inserts a status_log row first —
+    so the LATERAL join here is never expected to miss; a row with no match (e.g.
+    an old row rejected some other way) falls back to the 'found' sub-column rather
+    than being silently dropped.
+
+    q filters by title/company substring (case-insensitive) across every status —
+    matches design_handoff_review_ui Turn 5's global search; non-matching rows are
+    simply excluded here, the template dims/counts what's left.
+    """
     conn = _conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM jobs WHERE current_status IS NOT NULL ORDER BY logged_at DESC")
+            sql = """
+                SELECT j.*, sl.old_status AS rejected_from
+                FROM jobs j
+                LEFT JOIN LATERAL (
+                    SELECT old_status FROM status_log
+                    WHERE job_id = j.id AND new_status = 'rejected'
+                    ORDER BY changed_at DESC LIMIT 1
+                ) sl ON true
+                WHERE j.current_status IS NOT NULL
+            """
+            params: tuple = ()
+            if q:
+                sql += " AND (j.title ILIKE %s OR j.company ILIKE %s)"
+                like = f"%{q}%"
+                params = (like, like)
+            sql += " ORDER BY j.logged_at DESC"
+            cur.execute(sql, params)
             rows = [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
-    grouped: dict[str, list[dict]] = {s: [] for s in CURRENT_STATUSES}
+
+    active: dict[str, list[dict]] = {s: [] for s in FUNNEL_ORDER}
+    rejected: dict[str, list[dict]] = {s: [] for s in FUNNEL_ORDER}
     for row in rows:
-        grouped.setdefault(row["current_status"], []).append(row)
-    return grouped
+        if row["current_status"] == "rejected":
+            stage = row["rejected_from"] if row["rejected_from"] in FUNNEL_ORDER else "found"
+            rejected[stage].append(row)
+        else:
+            active.setdefault(row["current_status"], []).append(row)
+    return {"active": active, "rejected": rejected}
 
 
 def get_job(job_id: int) -> dict | None:
     conn = _conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM jobs WHERE id = %s", (job_id,))
+            # rejected_from (see get_kanban_jobs) so the detail peek modal can offer
+            # "restore to <stage>" for a job opened from the Rejected band; NULL for
+            # anything not currently rejected.
+            cur.execute("""
+                SELECT j.*, sl.old_status AS rejected_from
+                FROM jobs j
+                LEFT JOIN LATERAL (
+                    SELECT old_status FROM status_log
+                    WHERE job_id = j.id AND new_status = 'rejected'
+                    ORDER BY changed_at DESC LIMIT 1
+                ) sl ON true
+                WHERE j.id = %s
+            """, (job_id,))
             row = cur.fetchone()
             return dict(row) if row else None
     finally:

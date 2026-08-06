@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import db
-from config import CURRENT_STATUSES, REJECTION_REASON_LABELS, USER_REJECTION_REASONS
+from config import CURRENT_STATUSES, DOMAIN_COLORS, FUNNEL_ORDER, REJECTION_REASON_LABELS, USER_REJECTION_REASONS
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
@@ -45,6 +45,50 @@ def _safe_job_url(url: str | None) -> str | None:
 
 
 templates.env.filters["safe_url"] = _safe_job_url
+
+
+def _domain_tags(domain: str | None) -> list[dict]:
+    """Split a possibly-compound "X | Y" domain string (legacy rows scored before
+    domain classification was tightened to a single value) into individual tags.
+    AI/ML — the candidate's primary target domain — keeps the existing accent-gold
+    tag-accent styling; anything in DOMAIN_COLORS (config.py) gets its own oklch hue;
+    anything else (incl. "Other") falls back to a plain neutral tag."""
+    if not domain:
+        return []
+    tags = []
+    for name in (d.strip() for d in domain.split("|")):
+        if not name:
+            continue
+        if name == "AI/ML":
+            tags.append({"name": name, "class": "tag tag-accent", "style": ""})
+        elif name in DOMAIN_COLORS:
+            hue = DOMAIN_COLORS[name]
+            tags.append({"name": name, "class": "tag", "style":
+                f"color:oklch(.45 .09 {hue});border:1px solid oklch(.62 .09 {hue});background:oklch(.62 .09 {hue} / .1)"})
+        else:
+            tags.append({"name": name, "class": "tag tag-neutral", "style": ""})
+    return tags
+
+
+templates.env.globals["domain_tags"] = _domain_tags
+
+
+def _short_date(value) -> str:
+    """DD.MM for the compact card meta row. Accepts a datetime (logged_at/applied_at)
+    or job.published, which is a scraped TEXT field with a "YYYY-MM-DD..." prefix when
+    the source provides one at all."""
+    if not value:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%d.%m")
+    try:
+        from datetime import datetime as _dt
+        return _dt.strptime(str(value)[:10], "%Y-%m-%d").strftime("%d.%m")
+    except ValueError:
+        return ""
+
+
+templates.env.filters["short_date"] = _short_date
 
 STATUS_LABELS = {
     "found": "Found", "applied": "Applied", "recruiter_reply": "Recruiter reply",
@@ -115,7 +159,7 @@ def login_submit(token: str = Form(...)):
     if not hmac.compare_digest(token, TOKEN):
         _login_failures.append(time.time())
         raise HTTPException(status_code=403, detail="Invalid token")
-    redirect = RedirectResponse(url="/dashboard", status_code=302)
+    redirect = RedirectResponse(url="/", status_code=302)
     redirect.set_cookie(
         COOKIE_NAME, TOKEN, max_age=COOKIE_MAX_AGE,
         httponly=True, secure=True, samesite="strict",
@@ -145,11 +189,6 @@ def _json_js(value) -> str:
     """JSON for embedding inside a <script> block: escape < so scraped values
     (source/company names) can't terminate the script tag or open new markup."""
     return json.dumps(value).replace("<", "\\u003c")
-
-
-@app.get("/", response_class=HTMLResponse)
-def root():
-    return RedirectResponse(url="/dashboard", status_code=302)
 
 
 def _is_company_artifact(name: str | None) -> bool:
@@ -271,18 +310,50 @@ def review(request: Request, sort: str = Query(default="newest")):
     })
 
 
+@app.get("/", response_class=HTMLResponse)
 @app.get("/kanban", response_class=HTMLResponse)
-def kanban(request: Request):
+def kanban(request: Request, q: str | None = Query(default=None)):
+    # Kanban is the landing page (design_handoff_review_ui Turn 5) — "/" and "/kanban"
+    # are the same view, not a redirect, so the URL bar reads "/kanban" either way
+    # (nav links point at /kanban) and a bookmark to either still works.
     _authenticate(request)
-    jobs_by_status = db.get_kanban_jobs()
+    q = (q or "").strip() or None
+    board = db.get_kanban_jobs(q=q)
+    active_total = sum(len(v) for v in board["active"].values())
+    rejected_total = sum(len(v) for v in board["rejected"].values())
+    rejected_breakdown = [
+        f"from {STATUS_LABELS[s]} {len(board['rejected'][s])}" for s in FUNNEL_ORDER if board["rejected"][s]
+    ]
     return templates.TemplateResponse(request, "kanban.html", {
-        "jobs_by_status": jobs_by_status,
-        "statuses": CURRENT_STATUSES,
+        "board": board,
+        "funnel_order": FUNNEL_ORDER,
+        "active_total": active_total,
+        "rejected_total": rejected_total,
+        "rejected_breakdown": rejected_breakdown,
+        "q": q,
         "status_labels": STATUS_LABELS,
         "status_labels_json": json.dumps(STATUS_LABELS),
         "statuses_json": json.dumps(CURRENT_STATUSES),
         "reason_labels": REJECTION_REASON_LABELS,
         "active": "kanban",
+    })
+
+
+@app.get("/jobs/{job_id}/detail", response_class=HTMLResponse)
+def job_detail(request: Request, job_id: int):
+    """Card peek modal (design_handoff_review_ui Turn 4a) — full ATS breakdown as
+    an overlay, opened by clicking a kanban card instead of dragging it."""
+    _authenticate(request)
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown job id")
+    next_status = None
+    if job["current_status"] in FUNNEL_ORDER:
+        idx = FUNNEL_ORDER.index(job["current_status"])
+        if idx + 1 < len(FUNNEL_ORDER):
+            next_status = FUNNEL_ORDER[idx + 1]
+    return templates.TemplateResponse(request, "partials/job_detail_modal.html", {
+        "job": job, "next_status": next_status, "status_labels": STATUS_LABELS,
     })
 
 

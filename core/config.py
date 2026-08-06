@@ -84,6 +84,21 @@ EXCLUDE_LOCATION_PATTERNS = [
 CURRENT_STATUSES = ["found", "applied", "recruiter_reply", "screen", "interview", "offer", "rejected"]
 FUNNEL_ORDER = ["found", "applied", "recruiter_reply", "screen", "interview", "offer"]
 
+# Kanban/Card Review domain tags (design_handoff_review_ui Turn 4b) — one oklch hue per
+# domain from ats.py's fixed taxonomy, same lightness/chroma so they read as one family.
+# AI/ML keeps the existing accent-gold tag-accent class instead of a hue entry — it's
+# the primary domain, already styled. Anything outside the taxonomy (or a domain that's
+# never set) falls back to a plain neutral tag with no color.
+DOMAIN_COLORS = {
+    "EdTech": "250",
+    "FinTech": "155",
+    "Cybersecurity": "310",
+    "B2B SaaS": "195",
+    "Data/Analytics": "340",
+    "Growth/Consumer": "55",
+    "HealthTech": "25",
+}
+
 # Rejection reasons — 6 categories (FRONTEND_DESIGN_BRIEF.md). geo_restricted_auto is
 # set programmatically by the existing ResumeBuilder pipeline script, never through the
 # user-facing rejection form.

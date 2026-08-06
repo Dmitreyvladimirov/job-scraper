@@ -69,7 +69,9 @@ def test_login_correct_token_sets_cookie_and_redirects():
     c = _anon_client()
     r = c.post("/login", data={"token": TOKEN}, follow_redirects=False)
     assert r.status_code == 302
-    assert r.headers["location"] == "/dashboard"
+    # Kanban is the landing page (design_handoff_review_ui Turn 5) — login lands there,
+    # not on /dashboard.
+    assert r.headers["location"] == "/"
     assert dashboard.COOKIE_NAME in c.cookies
 
 
@@ -88,6 +90,16 @@ def test_review_rejects_no_cookie():
 
 def test_kanban_rejects_no_cookie():
     r = _anon_client().get("/kanban")
+    assert r.status_code == 403
+
+
+def test_root_rejects_no_cookie():
+    r = _anon_client().get("/")
+    assert r.status_code == 403
+
+
+def test_job_detail_rejects_no_cookie():
+    r = _anon_client().get("/jobs/1/detail")
     assert r.status_code == 403
 
 
@@ -123,6 +135,42 @@ def test_review_authenticated():
 def test_kanban_authenticated():
     r = _authenticated_client().get("/kanban")
     assert r.status_code == 200
+
+
+def test_root_serves_kanban_when_authenticated():
+    # "/" and "/kanban" are the same view (Turn 5 — Kanban is the landing page), not
+    # a redirect: both must return the board directly.
+    r = _authenticated_client().get("/", follow_redirects=False)
+    assert r.status_code == 200
+    assert "kanban-board" in r.text
+
+
+def test_kanban_search_param_filters_without_error():
+    r = _authenticated_client().get("/kanban", params={"q": "definitely-not-a-real-title-xyz"})
+    assert r.status_code == 200
+    assert "0 active" in r.text or "kanban-board" in r.text
+
+
+def test_job_detail_unknown_job_404():
+    r = _authenticated_client().get("/jobs/999999999/detail")
+    assert r.status_code == 404
+
+
+def test_job_detail_authenticated_for_a_real_job():
+    conn = dashboard.psycopg2.connect(
+        dashboard.DATABASE_URL, cursor_factory=dashboard.psycopg2.extras.RealDictCursor, connect_timeout=10
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM jobs WHERE current_status IS NOT NULL LIMIT 1")
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return  # no qualified jobs in this DB yet — nothing to assert against
+    r = _authenticated_client().get(f"/jobs/{row['id']}/detail")
+    assert r.status_code == 200
+    assert "job-detail-dialog" in r.text
 
 
 def test_sources_authenticated():

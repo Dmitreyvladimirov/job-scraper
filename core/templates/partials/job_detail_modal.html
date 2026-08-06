@@ -1,0 +1,71 @@
+<div class="dialog-backdrop" id="job-detail-dialog" style="z-index:55" onclick="if(event.target===this) this.remove()">
+  <div class="dialog" style="width:660px;max-width:92%">
+    <div style="display:flex;align-items:flex-start;gap:14px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:4px">{{ job.company or '—' }}{% if job.source %} · via {{ job.source }}{% endif %}</div>
+        <div style="font-family:var(--font-heading);font-weight:600;font-size:24px;line-height:1.2">{{ job.title }}</div>
+      </div>
+      <div style="text-align:center;flex:none"><div style="font-family:var(--font-heading);font-size:38px;line-height:1;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ job.ats_score if job.ats_score is not none else '—' }}</div><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600)">ATS</div></div>
+      <button type="button" class="btn btn-icon btn-ghost" aria-label="Close" style="margin:-4px -6px 0 0" onclick="document.getElementById('job-detail-dialog').remove()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+    </div>
+
+    {% set tags = domain_tags(job.domain) %}
+    {% if tags %}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 2px">
+      {% for t in tags %}<span class="{{ t.class }}" style="{{ t.style }}">{{ t.name }}</span>{% endfor %}
+    </div>
+    {% endif %}
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--color-divider);border-bottom:1px solid var(--color-divider);margin:12px 0;font-feature-settings:'tnum'">
+      <div style="padding:10px 14px 10px 0;border-right:1px solid var(--color-divider)"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--color-neutral-600)">Published</div><div style="font-size:13.5px;margin-top:2px">{{ job.published|short_date or '—' }}</div></div>
+      <div style="padding:10px 14px;border-right:1px solid var(--color-divider)"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--color-neutral-600)">Found</div><div style="font-size:13.5px;margin-top:2px">{{ job.logged_at|short_date or '—' }}</div></div>
+      <div style="padding:10px 14px;border-right:1px solid var(--color-divider)"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--color-neutral-600)">Applied</div><div style="font-size:13.5px;margin-top:2px{% if job.applied_at %};color:var(--color-accent-700);font-weight:600{% endif %}">{{ job.applied_at|short_date or '—' }}</div></div>
+      <div style="padding:10px 0 10px 14px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--color-neutral-600)">Status</div><div style="font-size:13.5px;margin-top:2px{% if job.current_status == 'rejected' %};color:var(--color-neutral-600){% else %};color:var(--color-accent-700);font-weight:600{% endif %}">{{ status_labels.get(job.current_status, job.current_status) }}{% if job.current_status == 'rejected' and job.rejection_reason %} — {{ job.rejection_reason }}{% endif %}</div></div>
+    </div>
+
+    {% if job.role_score is not none %}
+    <div style="display:grid;grid-template-columns:230px 1fr;gap:24px">
+      <div>
+        <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);margin-bottom:8px">Score breakdown</div>
+        <div style="display:grid;gap:5px;font-size:13px;font-feature-settings:'tnum'">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Role</span><span style="color:var(--color-accent-700);font-weight:600">{{ job.role_score }} / 30</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Domain (V {{ job.domain_value_score }} + E {{ job.domain_exp_score }})</span><span style="color:var(--color-accent-700);font-weight:600">{{ job.domain_score }} / 30</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Keywords</span><span style="color:var(--color-accent-500);font-weight:600">{{ job.keyword_score }} / 25</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Location</span><span style="color:var(--color-accent-700);font-weight:600">{{ job.location_score }} / 15</span></div>
+          {% if job.penalty_reason %}
+          <div style="display:flex;justify-content:space-between;border-top:1px solid var(--color-divider);padding-top:5px"><span style="color:var(--color-neutral-700)">Penalty</span><span style="color:var(--color-neutral-600);font-weight:600">−15</span></div>
+          <div style="font-size:11px;color:var(--color-neutral-600)">{{ job.penalty_reason }}</div>
+          {% endif %}
+        </div>
+      </div>
+      <div style="display:grid;gap:11px;align-content:start">
+        {% if job.matched_keywords or job.missed_keywords %}
+        <div>
+          <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);margin-bottom:6px">Keywords</div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px">
+            {% for kw in (job.matched_keywords or []) %}<span class="tag tag-accent">{{ kw }}</span>{% endfor %}
+            {% for kw in (job.missed_keywords or []) %}<span class="tag tag-neutral" style="text-decoration:line-through;opacity:.75">{{ kw }}</span>{% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% if job.why_apply %}<div><div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);margin-bottom:5px">Why apply</div><p style="margin:0;font-size:13px;line-height:1.55;text-align:justify">{{ job.why_apply }}</p></div>{% endif %}
+        {% if job.why_not %}<div><div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:5px">Why not</div><p style="margin:0;font-size:13px;line-height:1.55;color:var(--color-neutral-700);text-align:justify">{{ job.why_not }}</p></div>{% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p style="font-style:italic;color:var(--color-neutral-600);font-size:13px">No breakdown or keywords recorded for this vacancy.</p>
+    {% endif %}
+
+    <div class="dialog-actions" style="margin-top:6px">
+      {% set posting_url = (job.apply_url or job.url)|safe_url %}
+      {% if posting_url %}<a class="btn btn-ghost" href="{{ posting_url }}" target="_blank" rel="noopener noreferrer" style="gap:5px">Open posting<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>{% endif %}
+      <span style="flex:1"></span>
+      {% if job.current_status == 'rejected' %}
+        <button type="button" class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status" hx-vals='{"new_status": "{{ job.rejected_from or "found" }}"}' hx-swap="none" hx-on::after-request="if(event.detail.successful) location.reload()">Restore → {{ status_labels.get(job.rejected_from, "Found") }}</button>
+      {% else %}
+        <button type="button" class="btn btn-secondary" hx-get="/jobs/{{ job.id }}/reject-form" hx-target="#reject-modal-slot" hx-swap="innerHTML" onclick="document.getElementById('job-detail-dialog').remove()">Reject…</button>
+        {% if next_status %}<button type="button" class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status" hx-vals='{"new_status": "{{ next_status }}"}' hx-swap="none" hx-on::after-request="if(event.detail.successful) location.reload()">Advance → {{ status_labels.get(next_status, next_status) }}</button>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
