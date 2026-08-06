@@ -39,6 +39,10 @@
       <div class="card" data-job-id="{{ job.id }}" style="padding:11px;gap:5px;cursor:grab{% if status == 'rejected' %};opacity:.75{% endif %}">
         <div style="font-family:var(--font-heading);font-weight:600;font-size:14.5px;line-height:1.25">{{ job.title }}</div>
         <div style="font-size:11.5px;color:var(--color-neutral-700)">{{ job.company or '—' }}</div>
+        <div style="font-size:10.5px;color:var(--color-neutral-500);display:flex;gap:8px;flex-wrap:wrap">
+          {% if job.logged_at %}<span>Found {{ job.logged_at.strftime('%d.%m.%Y') }}</span>{% endif %}
+          {% if job.applied_at %}<span>Applied {{ job.applied_at.strftime('%d.%m.%Y') }}</span>{% endif %}
+        </div>
         <div class="card-meta">
           <span style="color:var(--color-accent-700);font-weight:600;font-feature-settings:'tnum'">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
           {% if status == 'rejected' and job.rejection_reason %}<span class="tag tag-neutral" style="align-self:start">{{ reason_labels.get(job.rejection_reason, job.rejection_reason) }}</span>{% endif %}

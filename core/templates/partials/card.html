@@ -12,6 +12,8 @@
       <div style="display:flex;align-items:center;gap:14px;margin-top:4px;font-size:12px;color:var(--color-neutral-600);flex-wrap:wrap">
         <span>{{ job.source }}</span>
         {% if job.domain %}<span>{{ job.domain }}</span>{% endif %}
+        {% if job.logged_at %}<span>Found {{ job.logged_at.strftime('%d.%m.%Y') }}</span>{% endif %}
+        {% if job.applied_at %}<span>Applied {{ job.applied_at.strftime('%d.%m.%Y') }}</span>{% endif %}
         {% if job.role_score is none %}
           <span style="font-style:italic;color:var(--color-neutral-500)">No breakdown or keywords recorded for this vacancy</span>
         {% endif %}

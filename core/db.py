@@ -101,6 +101,10 @@ def init_db() -> None:
                 cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS location_reason TEXT")
                 cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary TEXT")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_current_status ON jobs(current_status)")
+                # Card Review / Kanban show "found" and "applied" dates — logged_at already
+                # covers "found"; applied_at is set by update_job_status() the first time a
+                # job's current_status becomes 'applied'.
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS applied_at TIMESTAMP")
 
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS status_log (
@@ -348,10 +352,16 @@ def update_job_status(
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE jobs SET current_status = %s, rejection_reason = %s WHERE id = %s",
-                    (new_status, rejection_reason, job_id),
-                )
+                if new_status == "applied":
+                    cur.execute(
+                        "UPDATE jobs SET current_status = %s, rejection_reason = %s, applied_at = NOW() WHERE id = %s",
+                        (new_status, rejection_reason, job_id),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE jobs SET current_status = %s, rejection_reason = %s WHERE id = %s",
+                        (new_status, rejection_reason, job_id),
+                    )
                 cur.execute(
                     "INSERT INTO status_log (job_id, old_status, new_status, source) VALUES (%s,%s,%s,%s)",
                     (job_id, old_status, new_status, source),
