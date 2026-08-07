@@ -303,7 +303,12 @@ def get_review_jobs(sort: str = "newest") -> list[dict]:
         conn.close()
 
 
-def get_kanban_jobs(q: str | None = None) -> dict[str, dict[str, list[dict]]]:
+def get_kanban_jobs(
+    q: str | None = None,
+    score_min: int | None = None,
+    domains: list[str] | None = None,
+    sort: str = "newest",
+) -> dict[str, dict[str, list[dict]]]:
     """Two bands (design_handoff_review_ui Turn 3): 'active' — the live funnel
     columns — and 'rejected', grouped by the stage a job was rejected FROM (read
     off status_log's last old_status -> 'rejected' transition, not current_status,
@@ -316,6 +321,10 @@ def get_kanban_jobs(q: str | None = None) -> dict[str, dict[str, list[dict]]]:
     q filters by title/company substring (case-insensitive) across every status —
     matches design_handoff_review_ui Turn 5's global search; non-matching rows are
     simply excluded here, the template dims/counts what's left.
+
+    score_min/domains are Turn 9b's board filters (URL-param driven, no server-side
+    state). domains matches substring-wise so a compound "AI/ML | EdTech" row shows
+    up under either filter. sort='score' orders by ats_score desc instead of newest.
     """
     conn = _conn()
     try:
@@ -330,12 +339,18 @@ def get_kanban_jobs(q: str | None = None) -> dict[str, dict[str, list[dict]]]:
                 ) sl ON true
                 WHERE j.current_status IS NOT NULL
             """
-            params: tuple = ()
+            params: list = []
             if q:
                 sql += " AND (j.title ILIKE %s OR j.company ILIKE %s)"
                 like = f"%{q}%"
-                params = (like, like)
-            sql += " ORDER BY j.logged_at DESC"
+                params += [like, like]
+            if score_min is not None:
+                sql += " AND j.ats_score >= %s"
+                params.append(score_min)
+            if domains:
+                sql += " AND (" + " OR ".join(["j.domain ILIKE %s"] * len(domains)) + ")"
+                params += [f"%{d}%" for d in domains]
+            sql += " ORDER BY j.ats_score DESC NULLS LAST" if sort == "score" else " ORDER BY j.logged_at DESC"
             cur.execute(sql, params)
             rows = [dict(r) for r in cur.fetchall()]
     finally:
@@ -497,6 +512,157 @@ def get_conversion_stats(date_from: str | None = None, date_to: str | None = Non
         "rate": round(100 * applied_total / qualified_total, 1) if qualified_total else 0.0,
         "per_month": per_month,
     }
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    values = sorted(values)
+    n = len(values)
+    mid = n // 2
+    return values[mid] if n % 2 else (values[mid - 1] + values[mid]) / 2
+
+
+def get_tracker_series(date_from: str | None = None, date_to: str | None = None) -> dict:
+    """Weekly-bucketed Found/Applied/Replies event counts for the Tracker chart
+    (design_handoff_review_ui Turn 6 — replaces the manual Notion tracker). Found
+    counts jobs discovered that week (logged_at); Applied/Replies count status_log
+    events that week (changed_at) — an event-based read, not "jobs currently at X",
+    so a job that applied then got rejected still shows up in the week it applied.
+    date_from/date_to scope the chart; the summary totals (reply rate, median time
+    to reply) are always all-time, matching the legend chips in the mock."""
+
+    def _date_cond(col: str) -> tuple[str, list]:
+        conds, params = [], []
+        if date_from:
+            conds.append(f"{col} >= %s")
+            params.append(date_from)
+        if date_to:
+            conds.append(f"{col} <= %s")
+            params.append(date_to)
+        return (" AND " + " AND ".join(conds)) if conds else "", params
+
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cond, params = _date_cond("logged_at")
+            cur.execute(
+                f"SELECT DATE_TRUNC('week', logged_at) as week, COUNT(*) as cnt "
+                f"FROM jobs WHERE outcome='qualified'{cond} GROUP BY week ORDER BY week", params,
+            )
+            found = {str(r["week"])[:10]: r["cnt"] for r in cur.fetchall()}
+
+            cond, params = _date_cond("changed_at")
+            cur.execute(
+                f"SELECT DATE_TRUNC('week', changed_at) as week, COUNT(*) as cnt "
+                f"FROM status_log WHERE new_status='applied'{cond} GROUP BY week ORDER BY week", params,
+            )
+            applied = {str(r["week"])[:10]: r["cnt"] for r in cur.fetchall()}
+
+            cur.execute(
+                f"SELECT DATE_TRUNC('week', changed_at) as week, COUNT(*) as cnt "
+                f"FROM status_log WHERE new_status='recruiter_reply'{cond} GROUP BY week ORDER BY week", params,
+            )
+            replies = {str(r["week"])[:10]: r["cnt"] for r in cur.fetchall()}
+
+            cur.execute("SELECT COUNT(*) as cnt FROM status_log WHERE new_status='applied'")
+            applied_total = cur.fetchone()["cnt"]
+            cur.execute("SELECT COUNT(*) as cnt FROM status_log WHERE new_status='recruiter_reply'")
+            reply_total = cur.fetchone()["cnt"]
+
+            cur.execute("""
+                SELECT EXTRACT(EPOCH FROM (r.first_reply - a.first_applied)) / 86400 as days
+                FROM (SELECT job_id, MIN(changed_at) as first_applied FROM status_log
+                      WHERE new_status='applied' GROUP BY job_id) a
+                JOIN (SELECT job_id, MIN(changed_at) as first_reply FROM status_log
+                      WHERE new_status='recruiter_reply' GROUP BY job_id) r
+                  ON r.job_id = a.job_id AND r.first_reply > a.first_applied
+            """)
+            reply_days = [row["days"] for row in cur.fetchall() if row["days"] is not None]
+    finally:
+        conn.close()
+
+    weeks = sorted(set(found) | set(applied) | set(replies))
+    peak_week, peak_applied = max(applied.items(), key=lambda kv: kv[1], default=(None, 0))
+    median_days = _median(reply_days)
+
+    return {
+        "weeks": weeks,
+        "found": [found.get(w, 0) for w in weeks],
+        "applied": [applied.get(w, 0) for w in weeks],
+        "replies": [replies.get(w, 0) for w in weeks],
+        "applied_total": applied_total,
+        "reply_total": reply_total,
+        "reply_rate": round(100 * reply_total / applied_total, 1) if applied_total else 0.0,
+        "median_reply_days": round(median_days, 1) if median_days is not None else None,
+        "peak_week": peak_week,
+        "peak_week_applied": peak_applied,
+    }
+
+
+def get_funnel_stats() -> dict:
+    """Cohort funnel (design_handoff_review_ui Turn 9a): for each funnel stage AFTER
+    'found' (found isn't logged to status_log — log_job() sets it directly on INSERT,
+    never through update_job_status() — so a reach-count for it would only reflect
+    restore/un-reject events, wildly undercounting; the mock's funnel starts at
+    Applied too), how many jobs ever reached it (status_log distinct job_id per
+    new_status — reading status_log rather than current_status so a job later
+    rejected still counts toward every stage it actually passed through), conversion
+    % vs. the previous stage, median days spent at that stage before its next
+    transition (forward or rejected), and rejected-jobs-by-origin-stage (same LATERAL
+    pattern as get_kanban_jobs — origin CAN be 'found', so that one stays in scope)."""
+    stages_after_found = FUNNEL_ORDER[1:]
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT new_status, COUNT(DISTINCT job_id) as cnt FROM status_log "
+                "WHERE new_status = ANY(%s) GROUP BY new_status", (stages_after_found,),
+            )
+            reached = {r["new_status"]: r["cnt"] for r in cur.fetchall()}
+
+            cur.execute("""
+                SELECT t.new_status as stage,
+                       EXTRACT(EPOCH FROM (t.next_changed - t.changed_at)) / 86400 as days
+                FROM (
+                    SELECT job_id, new_status, changed_at,
+                           LEAD(changed_at) OVER (PARTITION BY job_id ORDER BY changed_at) as next_changed
+                    FROM status_log
+                ) t
+                WHERE t.new_status = ANY(%s) AND t.next_changed IS NOT NULL
+            """, (stages_after_found,))
+            days_by_stage: dict[str, list[float]] = {s: [] for s in stages_after_found}
+            for r in cur.fetchall():
+                if r["stage"] in days_by_stage and r["days"] is not None:
+                    days_by_stage[r["stage"]].append(r["days"])
+
+            cur.execute("""
+                SELECT sl.old_status AS stage, COUNT(*) as cnt
+                FROM jobs j
+                JOIN LATERAL (
+                    SELECT old_status FROM status_log
+                    WHERE job_id = j.id AND new_status = 'rejected'
+                    ORDER BY changed_at DESC LIMIT 1
+                ) sl ON true
+                WHERE j.current_status = 'rejected'
+                GROUP BY sl.old_status
+            """)
+            rejected_by_stage = {r["stage"]: r["cnt"] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+    stages = []
+    prev_cnt = None
+    for s in stages_after_found:
+        cnt = reached.get(s, 0)
+        stages.append({
+            "status": s,
+            "count": cnt,
+            "conversion_pct": round(100 * cnt / prev_cnt, 1) if prev_cnt else None,
+            "median_days": round(_median(days_by_stage.get(s, [])), 1) if days_by_stage.get(s) else None,
+        })
+        prev_cnt = cnt
+    return {"stages": stages, "rejected_by_stage": rejected_by_stage}
 
 
 def get_sources_config() -> dict[str, bool]:

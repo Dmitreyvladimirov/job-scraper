@@ -3,7 +3,6 @@
 {% block head %}
 <style>
   .kanban-desktop { display: grid; grid-template-columns: repeat(6, 1fr); padding: 4px 0 10px; }
-  .kanban-desktop.rejected-grid { grid-template-columns: repeat(6, 1fr); }
   .kanban-col { padding: 0 12px; border-right: 1px solid var(--color-divider); min-height: 60px; }
   .kanban-col:last-child { border-right: none; }
   .kanban-col-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 7px; margin-bottom: 12px; }
@@ -19,6 +18,15 @@
   .band-collapsed .kanban-desktop { display: none; }
   .kanban-mobile { display: none; }
   .status-chip { min-height: 44px; padding: 0 14px; }
+  .card-select-box { display: none; width: 15px; height: 15px; border: 1px solid var(--color-neutral-400); border-radius: 3px; flex: none; transform: translateY(2px); align-items: center; justify-content: center; }
+  .selecting .card-select-box { display: inline-flex; }
+  .card-select-box.checked { border-color: var(--color-accent); background: var(--color-accent); }
+  .card.selected { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 5%, transparent); }
+  #bulk-bar { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: none; align-items: center; gap: 14px;
+    background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+    padding: 10px 16px; white-space: nowrap; z-index: 40; }
+  .toolbar-popover { display: none; position: absolute; right: 0; top: 34px; width: 260px; background: var(--color-surface);
+    border: 1px solid var(--color-divider); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 14px; z-index: 30; font-size: 12.5px; }
   @media (max-width: 900px) {
     .kanban-desktop { display: none !important; }
     .kanban-mobile { display: block; }
@@ -34,6 +42,61 @@
 </style>
 {% endblock %}
 {% block content %}
+{% macro qs(extra) %}{% set parts = [] %}{% if q %}{% set _ = parts.append('q=' + q) %}{% endif %}{% if score_min %}{% set _ = parts.append('score_min=' + score_min|string) %}{% endif %}{% if domains %}{% set _ = parts.append('domain=' + domains|join(',')) %}{% endif %}{% set _ = parts.append('sort=' + sort) %}{% for k, v in extra.items() %}{% set _ = parts.append(k + '=' + v|string) %}{% endfor %}{{ parts|join('&') }}{% endmacro %}
+
+<div style="display:flex;align-items:center;gap:4px;margin-bottom:12px;position:relative">
+  <span style="font-family:var(--font-heading);font-weight:600;font-size:17px;margin-right:auto">Kanban</span>
+  <span class="btn btn-icon btn-ghost" title="Filter" style="position:relative;cursor:pointer;{% if active_filters %}color:var(--color-accent-700){% endif %}" onclick="event.stopPropagation();toggleEl('filter-popover')">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="7" y1="12" x2="17" y2="12"></line><line x1="10" y1="17" x2="14" y2="17"></line></svg>
+    {% if active_filters %}<span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:var(--color-accent);color:#fff;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;font-feature-settings:'tnum'">{{ active_filters }}</span>{% endif %}
+  </span>
+  <a class="btn btn-icon btn-ghost" title="Sort — {{ 'score' if sort == 'score' else 'newest' }}" href="/kanban?{{ qs({'sort': ('newest' if sort == 'score' else 'score')}) }}" style="{% if sort == 'score' %}color:var(--color-accent-700){% endif %}">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 16 4 4 4-4"></path><path d="M7 20V4"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v16"></path></svg>
+  </a>
+  <span class="btn btn-icon btn-ghost" title="Selection mode" id="selection-toggle-btn" onclick="toggleSelectionMode()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="5" y="5" rx="2"></rect><path d="m9 12 2 2 4-4"></path></svg>
+  </span>
+
+  <div class="toolbar-popover" id="filter-popover">
+    <form method="get" action="/kanban">
+      {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">Min score <input class="input" type="number" name="score_min" value="{{ score_min or '' }}" min="0" max="100" style="width:64px;padding:4px 8px"></label>
+      <div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:6px">Domain</div>
+      <div style="display:grid;gap:6px;max-height:180px;overflow-y:auto">
+        {% for d in all_domains %}
+        <label class="radio" style="font-size:12.5px"><input type="checkbox" name="domain" value="{{ d }}" {% if d in domains %}checked{% endif %}><span class="dot"></span><span>{{ d }}</span></label>
+        {% endfor %}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button type="submit" class="btn btn-primary" style="font-size:12.5px;padding:6px 12px">Apply</button>
+        {% if active_filters %}<a href="/kanban?{% if q %}q={{ q }}&{% endif %}sort={{ sort }}" class="btn btn-ghost" style="font-size:12.5px;padding:6px 12px">Clear</a>{% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if score_min or domains %}
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+  {% if score_min %}<span class="tag tag-accent" style="gap:5px">score ≥ {{ score_min }}<a href="/kanban?{{ qs({'score_min': ''}) }}" style="color:inherit;text-decoration:none;line-height:1">×</a></span>{% endif %}
+  {% for d in domains %}
+  {% set t = domain_tags(d)[0] %}
+  <span class="{{ t.class }}" style="gap:5px;{{ t.style }}">domain: {{ d }}<a href="#" style="color:inherit;text-decoration:none;line-height:1" onclick="return removeDomainFilter(event, '{{ d }}')">×</a></span>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if funnel.stages[0].count %}
+<div style="display:flex;align-items:center;gap:0;border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:8px 14px;font-size:12.5px;font-feature-settings:'tnum';margin-bottom:14px;flex-wrap:wrap">
+  {% for stage in funnel.stages %}
+  <span style="padding-right:14px"><b>{{ stage.count }}</b> {{ status_labels[stage.status]|lower }}</span>
+  {% if not loop.last and funnel.stages[loop.index].conversion_pct is not none %}<span style="color:var(--color-accent-700);padding-right:14px">→ {{ funnel.stages[loop.index].conversion_pct }}%</span>{% endif %}
+  {% endfor %}
+  <span style="flex:1"></span>
+  <a href="/tracker" style="font-size:12px">Tracker →</a>
+</div>
+{% endif %}
+
 <div id="kanban-board">
 {% if q %}
 <div style="display:flex;align-items:center;gap:10px;padding:8px 0;margin-bottom:10px;font-size:12.5px;color:var(--color-neutral-600);font-feature-settings:'tnum'">
@@ -52,14 +115,17 @@
       </div>
       <div class="kanban-cards" data-status="{{ status }}">
         {% for job in board.active[status] %}
-        <div class="card" data-job-id="{{ job.id }}" style="padding:10px;gap:5px;cursor:pointer" onclick="openDetail({{ job.id }})">
-          <div style="font-family:var(--font-heading);font-weight:600;font-size:14px;line-height:1.25">{{ job.title }}</div>
-          <div style="font-size:11px;color:var(--color-neutral-700)">{{ job.company or '—' }}</div>
+        <div class="card" data-job-id="{{ job.id }}" style="padding:10px;gap:5px;cursor:pointer" onclick="cardClick(event, {{ job.id }})">
+          <div style="display:flex;gap:8px;align-items:baseline">
+            <span class="card-select-box" data-select-box></span>
+            <div style="font-family:var(--font-heading);font-weight:600;font-size:14px;line-height:1.25;flex:1">{{ job.title }}</div>
+            <span style="font-family:var(--font-heading);font-weight:600;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
+          </div>
+          <div style="font-size:11px;color:var(--color-neutral-700);padding-left:23px">{{ job.company or '—' }}</div>
           {% set tags = domain_tags(job.domain) %}
-          {% if tags %}<div style="display:flex;flex-wrap:wrap;gap:4px">{% for t in tags %}<span class="{{ t.class }}" style="font-size:10.5px;padding:1px 7px;{{ t.style }}">{{ t.name }}</span>{% endfor %}</div>{% endif %}
-          <div class="card-meta" style="font-size:11px;font-feature-settings:'tnum'">
-            <span style="color:var(--color-accent-700);font-weight:600">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
-            {% if job.logged_at %}<span>·</span><span>{{ job.logged_at|short_date }}</span>{% endif %}
+          {% if tags %}<div style="display:flex;flex-wrap:wrap;gap:4px;padding-left:23px">{% for t in tags %}<span class="{{ t.class }}" style="font-size:10.5px;padding:1px 7px;{{ t.style }}">{{ t.name }}</span>{% endfor %}</div>{% endif %}
+          <div class="card-meta" style="font-size:11px;font-feature-settings:'tnum';padding-left:23px">
+            {% if job.logged_at %}<span>{{ job.logged_at|short_date }}</span>{% endif %}
           </div>
         </div>
         {% endfor %}
@@ -150,16 +216,53 @@
   <div id="sheet-options"></div>
 </dialog>
 <div id="detail-modal-slot"></div>
+
+<div id="bulk-bar">
+  <span style="font-size:13px;font-feature-settings:'tnum'"><b id="bulk-count" style="color:var(--color-accent-700)">0</b> selected</span>
+  <span style="width:1px;height:20px;background:var(--color-divider)"></span>
+  <div style="position:relative">
+    <span class="btn btn-secondary" style="font-size:12.5px;padding:6px 12px;gap:6px;cursor:pointer" onclick="event.stopPropagation();toggleEl('move-to-popover')">Move to<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></span>
+    <div class="toolbar-popover" id="move-to-popover" style="width:180px;bottom:36px;top:auto;right:auto;left:50%;transform:translateX(-50%)">
+      {% for status in funnel_order %}
+      <div class="sheet-option" style="min-height:auto;padding:8px 9px" onclick="bulkMove('{{ status }}')">{{ status_labels[status] }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  <span class="btn btn-primary" style="font-size:12.5px;padding:6px 12px;cursor:pointer" onclick="bulkReject()">Reject all…</span>
+  <span style="width:1px;height:20px;background:var(--color-divider)"></span>
+  <span style="font-size:12.5px;color:var(--color-neutral-600);border-bottom:1px dotted var(--color-neutral-500);cursor:pointer" onclick="clearSelection()">Clear</span>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
   var STATUS_LABELS = {{ status_labels_json|safe }};
   var STATUSES = {{ statuses_json|safe }};
+  var sortableInstances = [];
+  var selectionMode = false;
+  var selectedIds = new Set();
+
+  function toggleEl(id) {
+    document.querySelectorAll('.toolbar-popover').forEach(function (p) { if (p.id !== id) p.style.display = 'none'; });
+    var el = document.getElementById(id);
+    el.style.display = el.style.display === 'block' ? 'none' : 'block';
+  }
+  document.addEventListener('click', function () { document.querySelectorAll('.toolbar-popover').forEach(function (p) { p.style.display = 'none'; }); });
+  document.querySelectorAll('.toolbar-popover').forEach(function (p) { p.addEventListener('click', function (e) { e.stopPropagation(); }); });
+
+  function removeDomainFilter(e, domain) {
+    e.preventDefault();
+    var url = new URL(window.location.href);
+    var params = new URLSearchParams(window.location.search);
+    var remaining = (params.get('domain') || '').split(',').filter(function (d) { return d && d !== domain; });
+    if (remaining.length) params.set('domain', remaining.join(',')); else params.delete('domain');
+    window.location.href = '/kanban?' + params.toString();
+    return false;
+  }
 
   // Desktop drag-and-drop — active band only; rejected cards are read-only (restore
   // happens through the detail peek modal, not drag-and-drop).
   document.querySelectorAll('.band-active .kanban-cards').forEach(function (col) {
-    new Sortable(col, {
+    sortableInstances.push(new Sortable(col, {
       group: 'kanban', animation: 150,
       onEnd: function (evt) {
         var jobId = evt.item.getAttribute('data-job-id');
@@ -167,7 +270,7 @@
         if (evt.from === evt.to) return;
         moveJob(jobId, newStatus, evt.item);
       }
-    });
+    }));
   });
 
   function moveJob(jobId, newStatus, cardEl) {
@@ -186,11 +289,56 @@
   function openDetail(jobId) {
     htmx.ajax('GET', '/jobs/' + jobId + '/detail', {target: '#detail-modal-slot', swap: 'innerHTML'});
   }
+  function cardClick(e, jobId) {
+    if (selectionMode) { toggleSelect(jobId); return; }
+    openDetail(jobId);
+  }
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
-    var dlg = document.getElementById('job-detail-dialog');
-    if (dlg) dlg.remove();
+    var dlg = document.getElementById('job-detail-dialog') || document.getElementById('bulk-reject-dialog');
+    if (dlg) { dlg.remove(); return; }
+    if (selectionMode) toggleSelectionMode();
   });
+
+  // Selection mode + bulk actions (design_handoff_review_ui Turn 8)
+  function toggleSelectionMode() {
+    selectionMode = !selectionMode;
+    document.getElementById('kanban-board').classList.toggle('selecting', selectionMode);
+    document.getElementById('selection-toggle-btn').style.color = selectionMode ? 'var(--color-accent-700)' : '';
+    sortableInstances.forEach(function (s) { s.option('disabled', selectionMode); });
+    if (!selectionMode) clearSelection();
+  }
+  function toggleSelect(jobId) {
+    var card = document.querySelector('.band-active .card[data-job-id="' + jobId + '"]');
+    var box = card ? card.querySelector('[data-select-box]') : null;
+    if (selectedIds.has(jobId)) {
+      selectedIds.delete(jobId);
+      if (card) card.classList.remove('selected');
+      if (box) box.classList.remove('checked');
+    } else {
+      selectedIds.add(jobId);
+      if (card) card.classList.add('selected');
+      if (box) box.classList.add('checked');
+    }
+    var bar = document.getElementById('bulk-bar');
+    bar.style.display = selectedIds.size ? 'flex' : 'none';
+    document.getElementById('bulk-count').textContent = selectedIds.size;
+  }
+  function clearSelection() {
+    selectedIds.forEach(function (id) { toggleSelect(id); });
+  }
+  function bulkMove(status) {
+    if (!selectedIds.size) return;
+    if (status === 'rejected') { bulkReject(); return; }
+    fetch('/jobs/bulk-status', {
+      method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'ids=' + Array.from(selectedIds).join(',') + '&new_status=' + encodeURIComponent(status)
+    }).then(function () { location.reload(); });
+  }
+  function bulkReject() {
+    if (!selectedIds.size) return;
+    htmx.ajax('GET', '/jobs/bulk-reject-form?ids=' + Array.from(selectedIds).join(','), {target: '#detail-modal-slot', swap: 'innerHTML'});
+  }
 
   // Rejected band collapse — persisted per device
   var rejectedBand = document.getElementById('rejected-band');

@@ -310,27 +310,46 @@ def review(request: Request, sort: str = Query(default="newest")):
     })
 
 
+ALL_DOMAINS = ["AI/ML"] + list(DOMAIN_COLORS.keys()) + ["Other"]
+
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/kanban", response_class=HTMLResponse)
-def kanban(request: Request, q: str | None = Query(default=None)):
+def kanban(
+    request: Request,
+    q: str | None = Query(default=None),
+    score_min: int | None = Query(default=None),
+    domain: str | None = Query(default=None),
+    sort: str = Query(default="newest"),
+):
     # Kanban is the landing page (design_handoff_review_ui Turn 5) — "/" and "/kanban"
     # are the same view, not a redirect, so the URL bar reads "/kanban" either way
     # (nav links point at /kanban) and a bookmark to either still works.
     _authenticate(request)
     q = (q or "").strip() or None
-    board = db.get_kanban_jobs(q=q)
+    sort = sort if sort in ("newest", "score") else "newest"
+    domains = [d for d in (domain or "").split(",") if d in ALL_DOMAINS]
+    board = db.get_kanban_jobs(q=q, score_min=score_min, domains=domains or None, sort=sort)
     active_total = sum(len(v) for v in board["active"].values())
     rejected_total = sum(len(v) for v in board["rejected"].values())
     rejected_breakdown = [
         f"from {STATUS_LABELS[s]} {len(board['rejected'][s])}" for s in FUNNEL_ORDER if board["rejected"][s]
     ]
+    active_filters = (1 if score_min is not None else 0) + len(domains)
+    funnel = db.get_funnel_stats()
     return templates.TemplateResponse(request, "kanban.html", {
         "board": board,
         "funnel_order": FUNNEL_ORDER,
+        "funnel": funnel,
         "active_total": active_total,
         "rejected_total": rejected_total,
         "rejected_breakdown": rejected_breakdown,
         "q": q,
+        "score_min": score_min,
+        "domains": domains,
+        "all_domains": ALL_DOMAINS,
+        "active_filters": active_filters,
+        "sort": sort,
         "status_labels": STATUS_LABELS,
         "status_labels_json": json.dumps(STATUS_LABELS),
         "statuses_json": json.dumps(CURRENT_STATUSES),
@@ -379,6 +398,32 @@ def change_job_status(
     return HTMLResponse(f'<div id="job-{job_id}"></div>')
 
 
+@app.post("/jobs/bulk-status")
+def bulk_change_status(
+    request: Request,
+    ids: str = Form(...),
+    new_status: str = Form(...),
+    rejection_reason: str | None = Form(default=None),
+):
+    """Turn 8 bulk actions (multi-select "Move to" / "Reject all"). update_job_status()
+    is per-job with its own connection — there's no single-transaction path here, same
+    tolerant-partial-success shape already used by the one-off Notion-sync/stale-cleanup
+    maintenance scripts, rather than an all-or-nothing bulk write. The caller reloads the
+    board after; this just reports what happened."""
+    _authenticate(request)
+    job_ids = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    if not job_ids:
+        raise HTTPException(status_code=400, detail="No job ids provided")
+    updated, errors = 0, []
+    for job_id in job_ids:
+        try:
+            db.update_job_status(job_id, new_status, rejection_reason=rejection_reason, source="bulk")
+            updated += 1
+        except ValueError as e:
+            errors.append({"job_id": job_id, "error": str(e)})
+    return {"updated": updated, "errors": errors}
+
+
 @app.get("/jobs/{job_id}/reject-form", response_class=HTMLResponse)
 def reject_form(request: Request, job_id: int):
     _authenticate(request)
@@ -388,6 +433,21 @@ def reject_form(request: Request, job_id: int):
     reasons = [(r, REJECTION_REASON_LABELS[r]) for r in USER_REJECTION_REASONS]
     return templates.TemplateResponse(request, "partials/rejection_form.html", {
         "job": job, "reasons": reasons,
+    })
+
+
+@app.get("/jobs/bulk-reject-form", response_class=HTMLResponse)
+def bulk_reject_form(request: Request, ids: str = Query(...)):
+    """Turn 8b — one reason applied to every selected job; any row can be dropped
+    from the list client-side before submitting (see bulk_reject_form.html)."""
+    _authenticate(request)
+    job_ids = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    jobs = [j for j in (db.get_job(jid) for jid in job_ids) if j]
+    if not jobs:
+        raise HTTPException(status_code=404, detail="No matching jobs")
+    reasons = [(r, REJECTION_REASON_LABELS[r]) for r in USER_REJECTION_REASONS]
+    return templates.TemplateResponse(request, "partials/bulk_reject_form.html", {
+        "jobs": jobs, "reasons": reasons, "status_labels": STATUS_LABELS,
     })
 
 
@@ -401,6 +461,41 @@ def _parse_date_range(date_from: str | None, date_to: str | None) -> tuple[str |
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid date: {value!r} (expected YYYY-MM-DD)")
     return date_from, date_to
+
+
+@app.get("/tracker", response_class=HTMLResponse)
+def tracker(
+    request: Request,
+    date_from: str | None = Query(default=None, alias="from"),
+    date_to: str | None = Query(default=None, alias="to"),
+):
+    """Design Turn 6 — replaces the manual Notion tracker. Weekly Found/Applied/Replies
+    series (period-scoped) plus the Turn 9a funnel efficiency section (all-time)."""
+    _authenticate(request)
+    date_from, date_to = _parse_date_range(date_from, date_to)
+    series = db.get_tracker_series(date_from, date_to)
+    funnel = db.get_funnel_stats()
+
+    from datetime import date as _date, timedelta as _timedelta
+    today = _date.today()
+    presets = {
+        "7 weeks": str(today - _timedelta(weeks=7)),
+        "Quarter": str(today - _timedelta(days=90)),
+    }
+
+    return templates.TemplateResponse(request, "tracker.html", {
+        "active": "tracker",
+        "date_from": date_from,
+        "date_to": date_to,
+        "presets": presets,
+        "series": series,
+        "funnel": funnel,
+        "status_labels": STATUS_LABELS,
+        "weeks_json": _json_js(series["weeks"]),
+        "found_json": _json_js(series["found"]),
+        "applied_json": _json_js(series["applied"]),
+        "replies_json": _json_js(series["replies"]),
+    })
 
 
 @app.get("/stats/rejection-reasons", response_class=HTMLResponse)

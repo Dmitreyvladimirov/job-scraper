@@ -1,0 +1,44 @@
+<div class="dialog-backdrop" id="bulk-reject-dialog" style="z-index:50">
+  <form class="dialog" id="bulk-reject-form" hx-post="/jobs/bulk-status" hx-swap="none"
+        hx-on::after-request="if(event.detail.successful){document.getElementById('bulk-reject-dialog').remove();location.reload()}">
+    <input type="hidden" name="new_status" value="rejected">
+    <input type="hidden" name="ids" id="bulk-reject-ids" value="{{ jobs|map(attribute='id')|join(',') }}">
+    <div class="dialog-title">Reject {{ jobs|length }} vacanc{{ 'y' if jobs|length == 1 else 'ies' }}</div>
+    <div class="dialog-body">
+      <div id="bulk-reject-list" style="display:grid;gap:6px;margin-bottom:14px">
+        {% for job in jobs %}
+        <div class="bulk-reject-row" data-job-id="{{ job.id }}" style="display:flex;align-items:center;gap:8px;font-size:12.5px;border:1px solid var(--color-divider);border-radius:var(--radius-sm);padding:6px 10px">
+          <span style="flex:1">{{ job.title }} · <span style="color:var(--color-neutral-600)">{{ job.company or '—' }}{% if job.current_status and job.current_status != 'found' %} — from {{ status_labels.get(job.current_status, job.current_status) }}{% endif %}</span></span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;color:var(--color-neutral-500)" onclick="bulkRejectRemove({{ job.id }})"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </div>
+        {% endfor %}
+      </div>
+      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:8px">One reason applies to all</div>
+      <div style="display:grid;gap:10px">
+        {% for value, label in reasons %}
+        <label class="radio">
+          <input type="radio" name="rejection_reason" value="{{ value }}" required>
+          <span class="dot"></span>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('bulk-reject-dialog').remove()">Cancel</button>
+      <button type="submit" class="btn btn-primary" id="bulk-reject-submit">Reject {{ jobs|length }} vacanc{{ 'y' if jobs|length == 1 else 'ies' }}</button>
+    </div>
+  </form>
+</div>
+<script>
+  function bulkRejectRemove(jobId) {
+    var row = document.querySelector('.bulk-reject-row[data-job-id="' + jobId + '"]');
+    if (row) row.remove();
+    var remaining = Array.from(document.querySelectorAll('.bulk-reject-row')).map(function (r) { return r.getAttribute('data-job-id'); });
+    document.getElementById('bulk-reject-ids').value = remaining.join(',');
+    var n = remaining.length;
+    document.getElementById('bulk-reject-submit').textContent = 'Reject ' + n + ' vacanc' + (n === 1 ? 'y' : 'ies');
+    document.getElementById('bulk-reject-submit').disabled = n === 0;
+    if (n === 0) document.getElementById('bulk-reject-dialog').remove();
+  }
+</script>

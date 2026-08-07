@@ -191,3 +191,79 @@ def test_stats_invalid_date_returns_400():
 def test_source_toggle_unknown_source_404():
     r = _authenticated_client().post("/sources/definitely-not-a-real-source/toggle")
     assert r.status_code == 404
+
+
+# --- design_handoff_review_ui Turns 6/8/9 ---
+
+def test_tracker_rejects_no_cookie():
+    r = _anon_client().get("/tracker")
+    assert r.status_code == 403
+
+
+def test_tracker_authenticated():
+    r = _authenticated_client().get("/tracker")
+    assert r.status_code == 200
+
+
+def test_tracker_invalid_date_returns_400():
+    r = _authenticated_client().get("/tracker", params={"from": "not-a-date"})
+    assert r.status_code == 400
+
+
+def test_kanban_filters_by_score_and_domain():
+    r = _authenticated_client().get("/kanban", params={"score_min": 70, "domain": "AI/ML,FinTech"})
+    assert r.status_code == 200
+
+
+def test_kanban_sort_score():
+    r = _authenticated_client().get("/kanban", params={"sort": "score"})
+    assert r.status_code == 200
+
+
+def test_bulk_status_rejects_no_cookie():
+    r = _anon_client().post("/jobs/bulk-status", data={"ids": "1,2", "new_status": "applied"})
+    assert r.status_code == 403
+
+
+def test_bulk_status_no_valid_ids_400():
+    # Exercises bulk_change_status's own guard (empty job_ids after filtering non-digits) —
+    # a bare empty string for "ids" hits FastAPI's own required-field validation (422)
+    # before reaching the handler at all, which isn't the guard this test is after.
+    r = _authenticated_client().post("/jobs/bulk-status", data={"ids": "abc,xyz", "new_status": "applied"})
+    assert r.status_code == 400
+
+
+def test_bulk_status_unknown_ids_reports_errors_not_crash():
+    r = _authenticated_client().post("/jobs/bulk-status", data={"ids": "999999998,999999999", "new_status": "applied"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["updated"] == 0
+    assert len(body["errors"]) == 2
+
+
+def test_bulk_reject_form_rejects_no_cookie():
+    r = _anon_client().get("/jobs/bulk-reject-form", params={"ids": "1,2"})
+    assert r.status_code == 403
+
+
+def test_bulk_reject_form_unknown_ids_404():
+    r = _authenticated_client().get("/jobs/bulk-reject-form", params={"ids": "999999998,999999999"})
+    assert r.status_code == 404
+
+
+def test_bulk_reject_form_for_real_jobs():
+    conn = dashboard.psycopg2.connect(
+        dashboard.DATABASE_URL, cursor_factory=dashboard.psycopg2.extras.RealDictCursor, connect_timeout=10
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM jobs WHERE current_status = 'found' LIMIT 2")
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if len(rows) < 1:
+        return  # nothing in 'found' to test against
+    ids = ",".join(str(r["id"]) for r in rows)
+    r = _authenticated_client().get("/jobs/bulk-reject-form", params={"ids": ids})
+    assert r.status_code == 200
+    assert "bulk-reject-dialog" in r.text
