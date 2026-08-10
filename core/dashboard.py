@@ -1,20 +1,27 @@
 """FastAPI dashboard — reads from Postgres and serves analytics charts."""
+import csv
 import hmac
+import io
 import json
+import logging
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
 import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import db
 from config import CURRENT_STATUSES, DOMAIN_COLORS, FUNNEL_ORDER, REJECTION_REASON_LABELS, USER_REJECTION_REASONS
+
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
@@ -152,13 +159,17 @@ def login_form(request: Request):
 
 
 @app.post("/login")
-def login_submit(token: str = Form(...)):
+def login_submit(request: Request, token: str = Form(...)):
     if not TOKEN:
         raise HTTPException(status_code=503, detail="Dashboard misconfigured: DASHBOARD_TOKEN not set")
     _check_login_rate_limit()
     if not hmac.compare_digest(token, TOKEN):
         _login_failures.append(time.time())
-        raise HTTPException(status_code=403, detail="Invalid token")
+        # Turn 7b's "Access token invalid" state — re-render the same form with an
+        # inline message instead of a bare 403 JSON blob (nowhere to go from that).
+        response = templates.TemplateResponse(request, "login.html", {"error": True}, status_code=403)
+        response.headers["Cache-Control"] = "no-store"
+        return response
     redirect = RedirectResponse(url="/", status_code=302)
     redirect.set_cookie(
         COOKIE_NAME, TOKEN, max_age=COOKIE_MAX_AGE,
@@ -362,6 +373,7 @@ def kanban(
         "status_labels": STATUS_LABELS,
         "status_labels_json": json.dumps(STATUS_LABELS),
         "statuses_json": json.dumps(CURRENT_STATUSES),
+        "funnel_order_json": json.dumps(FUNNEL_ORDER),
         "reason_labels": REJECTION_REASON_LABELS,
         "active": "kanban",
     })
@@ -551,3 +563,102 @@ def toggle_source_route(request: Request, name: str):
     return templates.TemplateResponse(request, "partials/sources_panel.html", {
         "sources": sources,
     })
+
+
+@app.get("/api/last-run")
+def api_last_run(request: Request):
+    """Turn 7g auto-refresh + Turn 7c stale-scraper banner — polled every 5 min from
+    base.html. hours_ago lets the client decide both "did a new run just land" (id
+    changed since page load) and "has the scraper gone quiet" (hours_ago past a
+    threshold), without a second endpoint."""
+    _authenticate(request)
+    run = db.get_last_run()
+    if not run:
+        return {"run_id": None, "qualified": 0, "hours_ago": None}
+    finished = datetime.fromisoformat(run["finished_at"])
+    if finished.tzinfo is None:
+        finished = finished.replace(tzinfo=timezone.utc)
+    hours_ago = (datetime.now(timezone.utc) - finished).total_seconds() / 3600
+    return {"run_id": run["id"], "qualified": run["qualified"], "hours_ago": round(hours_ago, 1)}
+
+
+_CSV_VIEWS = {"tracker", "vacancies", "rejections"}
+
+
+@app.get("/export.csv")
+def export_csv(
+    request: Request,
+    view: str = Query(...),
+    date_from: str | None = Query(default=None, alias="from"),
+    date_to: str | None = Query(default=None, alias="to"),
+):
+    """Turn 7f / SPEC_UPDATES.md §12 — streamed CSV, no library beyond stdlib csv.
+    Three views: tracker (weekly series, respects the same from/to as /tracker),
+    vacancies (every qualified job + its current status), rejections (rejected jobs
+    + reason). date_from/date_to only apply to the tracker view — the other two are
+    always all-time (matches "All vacancies" / "Rejection log" in the 7f mock, which
+    carry no period selector)."""
+    _authenticate(request)
+    if view not in _CSV_VIEWS:
+        raise HTTPException(status_code=400, detail=f"Unknown export view: {view!r} (expected one of {sorted(_CSV_VIEWS)})")
+    date_from, date_to = _parse_date_range(date_from, date_to)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    if view == "tracker":
+        series = db.get_tracker_series(date_from, date_to)
+        writer.writerow(["week", "found", "applied", "replies"])
+        for i, week in enumerate(series["weeks"]):
+            writer.writerow([week, series["found"][i], series["applied"][i], series["replies"][i]])
+    elif view == "vacancies":
+        rows = _query("""
+            SELECT title, company, source, domain, ats_score, current_status, rejection_reason,
+                   logged_at, applied_at, published, url
+            FROM jobs WHERE outcome = 'qualified' ORDER BY logged_at DESC
+        """)
+        writer.writerow(["title", "company", "source", "domain", "ats_score", "status",
+                          "rejection_reason", "found_at", "applied_at", "published", "url"])
+        for r in rows:
+            writer.writerow([r["title"], r["company"], r["source"], r["domain"], r["ats_score"],
+                              r["current_status"], r["rejection_reason"], r["logged_at"],
+                              r["applied_at"], r["published"], r["url"]])
+    else:  # rejections
+        rows = _query("""
+            SELECT title, company, source, domain, ats_score, rejection_reason, logged_at
+            FROM jobs WHERE current_status = 'rejected' ORDER BY logged_at DESC
+        """)
+        writer.writerow(["title", "company", "source", "domain", "ats_score", "rejection_reason", "found_at"])
+        for r in rows:
+            writer.writerow([r["title"], r["company"], r["source"], r["domain"], r["ats_score"],
+                              r["rejection_reason"], r["logged_at"]])
+
+    buf.seek(0)
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="{view}.csv"',
+    })
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_handler(request: Request, exc: StarletteHTTPException):
+    # Only intercept Starlette's own "no route matched" 404 — every deliberate
+    # `raise HTTPException(404, "...")` inside a route (unknown job id, unknown
+    # source, htmx fragment targets) keeps its plain JSON body; those are read by
+    # nothing but `r.ok`/`event.detail.successful` checks in the page JS, and several
+    # are hit by htmx fragment calls that were never meant to render a full page.
+    if exc.status_code == 404 and exc.detail == "Not Found":
+        return templates.TemplateResponse(request, "error.html", {
+            "code": 404,
+            "heading": "Page not found",
+            "message": "This link doesn't match anything here — it may be old, or the vacancy was removed in a stale-cleanup pass.",
+        }, status_code=404)
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled error on {request.method} {request.url.path}")
+    return templates.TemplateResponse(request, "error.html", {
+        "code": 500,
+        "heading": "Something broke",
+        "message": "The database is unreachable or something failed unexpectedly. Data is safe — try again in a minute.",
+    }, status_code=500)

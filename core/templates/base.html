@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}JobScraper{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/classical.css">
 <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"
         integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
@@ -41,14 +42,37 @@
     </div>
     {% endif %}
     <a href="/logout" style="font-size:12px;color:var(--color-neutral-600)">Log out</a>
+    <button class="toggle-dark" id="shortcuts-toggle" title="Keyboard shortcuts (?)" type="button">?</button>
     <button class="toggle-dark" id="dark-toggle" title="Toggle dark theme" type="button">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
     </button>
   </div>
 </div>
 <div class="wrap" style="padding-top:var(--space-4);padding-bottom:var(--space-8)">
+<div id="service-banners"></div>
 {% block content %}{% endblock %}
 </div>
+
+<div id="toast-stack"></div>
+
+<div class="dialog-backdrop" id="shortcuts-dialog" style="z-index:70;display:none" onclick="if(event.target===this) this.style.display='none'">
+  <div class="dialog" style="width:460px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span class="dialog-title">Keyboard shortcuts</span>
+      <span style="font-size:11px;color:var(--color-neutral-500)">press ? anywhere · Esc closes</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:12.5px">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Next / prev card</span><span><kbd class="kbd">j</kbd> <kbd class="kbd">k</kbd></span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Advance</span><kbd class="kbd">a</kbd></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Open peek</span><kbd class="kbd">↵</kbd></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Reject…</span><kbd class="kbd">r</kbd></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Search</span><kbd class="kbd">⌘K</kbd></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--color-neutral-700)">Open posting</span><kbd class="kbd">o</kbd></div>
+    </div>
+    <div class="dialog-actions"><button type="button" class="btn btn-secondary" onclick="document.getElementById('shortcuts-dialog').style.display='none'">Close</button></div>
+  </div>
+</div>
+
 <script>
   (function () {
     var saved = localStorage.getItem('jobscraper-theme');
@@ -57,6 +81,107 @@
       document.body.classList.toggle('dark');
       localStorage.setItem('jobscraper-theme', document.body.classList.contains('dark') ? 'dark' : 'light');
     });
+  })();
+
+  // Small popover toggle (Turn 7f export menu; kanban.html's own toolbar popovers
+  // redeclare this identically, harmless — whichever script tag runs last wins and
+  // both do the same thing).
+  function toggleEl(id) {
+    document.querySelectorAll('.toolbar-popover').forEach(function (p) { if (p.id !== id) p.style.display = 'none'; });
+    var el = document.getElementById(id);
+    if (el) el.style.display = el.style.display === 'block' ? 'none' : 'block';
+  }
+  document.addEventListener('click', function () { document.querySelectorAll('.toolbar-popover').forEach(function (p) { p.style.display = 'none'; }); });
+  document.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('.toolbar-popover')) e.stopPropagation(); }, true);
+
+  // Toasts (Turn 7c) — reusable across pages; kanban.html calls this after status
+  // changes. message is set via textContent so scraped job titles/companies can
+  // never inject markup here.
+  window.showToast = function (message, undoFn, undoLabel) {
+    var stack = document.getElementById('toast-stack');
+    if (!stack) return function () {};
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>' +
+      '<span class="toast-msg"></span>' +
+      (undoFn ? '<span class="toast-undo"></span>' : '') +
+      '<span class="toast-timer" style="color:var(--color-neutral-500);font-feature-settings:\'tnum\'">5s</span>';
+    el.querySelector('.toast-msg').textContent = message;
+    var undoEl = el.querySelector('.toast-undo');
+    if (undoEl) undoEl.textContent = undoLabel || 'Undo';
+    stack.appendChild(el);
+    var left = 5, dismissed = false;
+    var timerEl = el.querySelector('.toast-timer');
+    var iv = setInterval(function () {
+      left -= 1;
+      if (timerEl) timerEl.textContent = left + 's';
+      if (left <= 0) dismiss();
+    }, 1000);
+    function dismiss() { if (dismissed) return; dismissed = true; clearInterval(iv); el.remove(); }
+    if (undoEl) undoEl.addEventListener('click', function () { dismiss(); undoFn(); });
+    return dismiss;
+  };
+
+  // Shortcuts cheatsheet + global bindings (Turn 7f). Kanban-specific bindings
+  // (j/k/Enter/r/a/o) live in kanban.html's own script block — this only owns
+  // what's meaningful on every page: "?" to open the cheatsheet, Esc to close it,
+  // ⌘K/Ctrl+K to jump to the kanban search box when it's on the page.
+  (function () {
+    var dlg = document.getElementById('shortcuts-dialog');
+    document.getElementById('shortcuts-toggle').addEventListener('click', function () { dlg.style.display = 'flex'; });
+    document.addEventListener('keydown', function (e) {
+      var typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '');
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        var search = document.getElementById('kanban-search');
+        if (search) { e.preventDefault(); search.focus(); search.select(); }
+        return;
+      }
+      if (e.key === '?' && !typing) { dlg.style.display = 'flex'; return; }
+      if (e.key === 'Escape' && dlg.style.display !== 'none') { dlg.style.display = 'none'; }
+    });
+  })();
+
+  // Auto-refresh + stale-scraper banners (Turn 7g / 7c) — polls /api/last-run every
+  // 5 min. Deliberately reload()-based rather than an htmx fragment merge: simpler,
+  // and the one place it could disturb (an open peek modal / in-progress drag) is
+  // exactly what the "Show" click is for — the user chose to refresh.
+  (function () {
+    var container = document.getElementById('service-banners');
+    if (!container) return;
+    var seenRunId = null;
+    var STALE_HOURS = 20;
+    function banner(kind, html) {
+      if (container.querySelector('[data-banner="' + kind + '"]')) return;
+      var el = document.createElement('div');
+      el.className = 'banner-accent';
+      el.setAttribute('data-banner', kind);
+      el.innerHTML = html;
+      container.appendChild(el);
+    }
+    function check() {
+      fetch('/api/last-run').then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+        if (!data || data.run_id === null) return;
+        if (seenRunId === null) {
+          seenRunId = data.run_id;
+        } else if (data.run_id !== seenRunId) {
+          seenRunId = data.run_id;
+          banner('new-run',
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-700)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:om-swing 2s ease-in-out infinite;transform-origin:50% 0"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>' +
+            '<span style="flex:1">Scrape run finished — <b>' + data.qualified + '</b> new cards in Found</span>' +
+            '<span class="banner-action" onclick="location.reload()">Show</span>' +
+            '<span class="banner-dismiss" onclick="this.closest(\'[data-banner]\').remove()">Dismiss</span>');
+        }
+        if (data.hours_ago !== null && data.hours_ago > STALE_HOURS) {
+          banner('stale',
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-700)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:om-swing 2s ease-in-out infinite;transform-origin:50% 0"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>' +
+            '<span style="flex:1;color:var(--color-accent-800)">Last scrape run: <b>' + Math.round(data.hours_ago) + ' h ago</b> — schedule may be stuck</span>' +
+            '<span class="banner-dismiss" onclick="this.closest(\'[data-banner]\').remove()">Dismiss</span>');
+        }
+      }).catch(function () {});
+    }
+    check();
+    setInterval(check, 5 * 60 * 1000);
   })();
 </script>
 {% block scripts %}{% endblock %}

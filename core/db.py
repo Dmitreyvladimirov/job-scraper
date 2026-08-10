@@ -724,3 +724,21 @@ def toggle_source(name: str) -> bool:
         conn.close()
     logger.info(f"Source toggled: {name}")
     return True
+
+
+def get_last_run() -> dict | None:
+    """Most recent completed scrape run — Turn 7g's auto-refresh banner and Turn 7c's
+    stale-scraper warning both derive from this (id/finished_at to detect "run just
+    finished", finished_at's age to detect "scraper's gone quiet"). None if no run has
+    ever finished (fresh DB)."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, started_at, finished_at, qualified FROM runs "
+                "WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    finally:
+        conn.close()

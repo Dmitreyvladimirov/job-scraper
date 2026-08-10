@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} — JobScraper{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:center;min-height:55vh;text-align:center">
+  <div style="max-width:340px">
+    <div style="height:54px;display:flex;justify-content:center;margin-bottom:10px">
+      {% if code == 404 %}
+      <svg width="54" height="54" viewBox="0 0 48 48" style="animation:om-float 4s ease-in-out infinite"><g fill="none" stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round"><path d="M12 8h18l8 8v24H12z"></path><path d="M30 8v8h8"></path><path d="M17 24h14M17 29h14M17 34h9" stroke="var(--color-neutral-400)" stroke-dasharray="3 4" style="animation:om-dash 1.6s linear infinite"></path></g></svg>
+      {% else %}
+      <svg width="54" height="54" viewBox="0 0 48 48" style="animation:om-blink 3.4s linear infinite"><g fill="none" stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round"><path d="M24 6a11 11 0 0 1 6 20c-1.4 1-2 2.4-2 4h-8c0-1.6-.6-3-2-4a11 11 0 0 1 6-20Z"></path><path d="M20 34h8M21 38h6" stroke="var(--color-neutral-400)"></path><path d="M24 14v6M21 17h6" stroke="var(--color-neutral-400)"></path></g></svg>
+      {% endif %}
+    </div>
+    <div style="font-family:var(--font-heading);font-size:64px;line-height:1;font-feature-settings:'tnum';color:var(--color-neutral-400)">{{ code }}</div>
+    <div style="font-family:var(--font-heading);font-weight:600;font-size:19px;margin:12px 0 6px">{{ heading }}</div>
+    <p style="font-size:13px;color:var(--color-neutral-600);margin:0 0 18px;line-height:1.55">{{ message }}</p>
+    {% if code == 500 %}
+    <span class="btn btn-secondary" style="font-size:13px;gap:6px;cursor:pointer" onclick="location.reload()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></svg>Retry</span>
+    {% else %}
+    <a class="btn btn-secondary" style="font-size:13px" href="/kanban">← Back to Kanban</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

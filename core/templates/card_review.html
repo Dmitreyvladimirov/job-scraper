@@ -14,7 +14,11 @@
 
 <div style="padding:10px 0 26px" id="review-list">
 {% if not jobs %}
-  <p class="text-muted" style="padding:40px 0;text-align:center">Nothing waiting for review — all caught up.</p>
+  <div class="empty-state" style="padding:60px 14px">
+    <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto;animation:om-float 5s ease-in-out infinite"><path d="M20 6 9 17l-5-5"></path></svg>
+    <div class="empty-title">All caught up</div>
+    <p class="empty-body">Nothing waiting for review right now — check back after the next scrape run.</p>
+  </div>
 {% endif %}
 {% for job in jobs %}
   {% include "partials/card.html" %}

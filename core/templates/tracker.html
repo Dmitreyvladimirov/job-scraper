@@ -14,6 +14,14 @@
     <a class="seg-opt" href="/tracker?from={{ from_date }}" style="{% if date_from == from_date %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit;padding:5px 11px">{{ label }}</a>
     {% endfor %}
   </div>
+  <div style="position:relative">
+    <span class="btn btn-secondary" style="font-size:12.5px;padding:6px 12px;cursor:pointer" onclick="event.stopPropagation();toggleEl('csv-export-popover')">Export CSV ▾</span>
+    <div class="toolbar-popover" id="csv-export-popover" style="display:none;width:230px;top:36px">
+      <a class="sheet-option" style="min-height:auto;padding:8px 9px;text-decoration:none;color:inherit" href="/export.csv?view=tracker{% if date_from %}&from={{ date_from }}{% endif %}{% if date_to %}&to={{ date_to }}{% endif %}">Current view (tracker series)</a>
+      <a class="sheet-option" style="min-height:auto;padding:8px 9px;text-decoration:none;color:inherit" href="/export.csv?view=vacancies">All vacancies + status</a>
+      <a class="sheet-option" style="min-height:auto;padding:8px 9px;text-decoration:none;color:inherit" href="/export.csv?view=rejections">Rejection log with reasons</a>
+    </div>
+  </div>
 </div>
 
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Log in — JobScraper</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/classical.css">
 <style>
   body { padding: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -19,9 +20,13 @@
 </style>
 </head>
 <body class="">
-<div class="login-box">
+<div class="login-box" style="text-align:center">
+  <img src="/static/favicon.svg" width="44" height="44" alt="" style="margin:0 auto 8px;animation:om-float 5s ease-in-out infinite">
   <h1>JobScraper</h1>
-  <form method="post" action="/login">
+  {% if error %}
+  <p style="font-size:12.5px;color:var(--color-accent-700);margin:0 0 14px">Access token invalid — the link may be old, or the token changed. Enter the current one.</p>
+  {% endif %}
+  <form method="post" action="/login" style="text-align:left">
     <input type="password" name="token" placeholder="Dashboard token" autofocus required autocomplete="current-password">
     <button type="submit" class="btn btn-primary">Log in</button>
   </form>

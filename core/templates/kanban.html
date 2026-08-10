@@ -109,6 +109,14 @@
 </div>
 {% endif %}
 
+{% if q and not active_total and not rejected_total %}
+<div class="empty-state" style="padding:60px 14px">
+  <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto;animation:om-swing 3.2s ease-in-out infinite;transform-origin:50% 20%"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path><path d="M8 11h6" stroke="var(--color-accent)"></path></svg>
+  <div class="empty-title">No matches for “{{ q }}”</div>
+  <p class="empty-body">Check for typos, or search by company instead.</p>
+  <a class="btn btn-ghost" href="/kanban" style="font-size:12px;margin-top:10px">Clear search</a>
+</div>
+{% else %}
 <div class="band-active">
   <div class="kanban-desktop">
     {% for status in funnel_order %}
@@ -119,7 +127,7 @@
       </div>
       <div class="kanban-cards" data-status="{{ status }}">
         {% for job in board.active[status] %}
-        <div class="card" data-job-id="{{ job.id }}" style="padding:10px;gap:5px;cursor:pointer" onclick="cardClick(event, {{ job.id }})">
+        <div class="card" data-job-id="{{ job.id }}" data-url="{{ (job.apply_url or job.url)|safe_url or '' }}" data-title="{{ job.title }}" data-company="{{ job.company or '' }}" style="padding:10px;gap:5px;cursor:pointer" onclick="cardClick(event, {{ job.id }})">
           <div style="display:flex;gap:8px;align-items:baseline">
             <span class="card-select-box" data-select-box></span>
             <div style="font-family:var(--font-heading);font-weight:600;font-size:14px;line-height:1.25;flex:1">{{ job.title }}</div>
@@ -133,7 +141,13 @@
           </div>
         </div>
         {% endfor %}
-        {% if not board.active[status] %}<div class="kanban-empty">Empty</div>{% endif %}
+        {% if not board.active[status] %}
+        <div class="empty-state">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto;animation:om-float 5s ease-in-out infinite"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>
+          <div class="empty-title">{{ status_labels[status] }} — empty</div>
+          <p class="empty-body">{% if loop.first %}Nothing new right now — the next scrape run will add cards here.{% else %}Cards will appear here once you move something from {{ status_labels[funnel_order[loop.index0 - 1]] }}.{% endif %}</p>
+        </div>
+        {% endif %}
       </div>
     </div>
     {% endfor %}
@@ -167,6 +181,7 @@
     {% endfor %}
   </div>
 </div>
+{% endif %}
 </div>
 
 <div class="kanban-mobile">
@@ -242,6 +257,7 @@
 <script>
   var STATUS_LABELS = {{ status_labels_json|safe }};
   var STATUSES = {{ statuses_json|safe }};
+  var FUNNEL_ORDER = {{ funnel_order_json|safe }};
   var sortableInstances = [];
   var selectionMode = false;
   var selectedIds = new Set();
@@ -272,13 +288,21 @@
       onEnd: function (evt) {
         var jobId = evt.item.getAttribute('data-job-id');
         var newStatus = evt.to.getAttribute('data-status');
+        var oldStatus = evt.from.getAttribute('data-status');
         if (evt.from === evt.to) return;
-        moveJob(jobId, newStatus, evt.item);
+        moveJob(jobId, newStatus, evt.item, oldStatus);
       }
     }));
   });
 
-  function moveJob(jobId, newStatus, cardEl) {
+  function undoMove(jobId, oldStatus) {
+    fetch('/jobs/' + jobId + '/status', {
+      method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'new_status=' + encodeURIComponent(oldStatus)
+    }).then(function () { location.reload(); });
+  }
+
+  function moveJob(jobId, newStatus, cardEl, oldStatus) {
     if (newStatus === 'rejected') {
       htmx.ajax('GET', '/jobs/' + jobId + '/reject-form', {target: '#reject-modal-slot', swap: 'innerHTML'});
       if (cardEl) cardEl.remove();
@@ -287,7 +311,18 @@
     fetch('/jobs/' + jobId + '/status', {
       method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: 'new_status=' + encodeURIComponent(newStatus)
-    }).then(function (r) { if (!r.ok) location.reload(); });
+    }).then(function (r) {
+      if (!r.ok) { location.reload(); return; }
+      // Toast + undo (Turn 7c) — only for moves that don't already reload the page
+      // (drag-and-drop leaves the board as-is; the mobile sheet and bulk actions
+      // reload immediately, which would kill the toast before its undo window matters).
+      if (oldStatus && window.showToast) {
+        var label = (cardEl && (cardEl.dataset.company || cardEl.dataset.title)) || 'Card';
+        window.showToast(label + ' → ' + (STATUS_LABELS[newStatus] || newStatus), function () {
+          undoMove(jobId, oldStatus);
+        }, 'Undo');
+      }
+    });
   }
 
   // Card peek modal
@@ -303,6 +338,57 @@
     var dlg = document.getElementById('job-detail-dialog') || document.getElementById('bulk-reject-dialog');
     if (dlg) { dlg.remove(); return; }
     if (selectionMode) toggleSelectionMode();
+  });
+
+  // Keyboard navigation (Turn 7f) — j/k walk the active cards in DOM order (base.html
+  // owns ? and ⌘K, which apply on every page; these are kanban-specific since they
+  // act on "the focused card", a concept that only exists here).
+  var focusedCard = null;
+  function setFocusedCard(card) {
+    if (focusedCard) focusedCard.classList.remove('kbd-focused');
+    focusedCard = card;
+    if (focusedCard) {
+      focusedCard.classList.add('kbd-focused');
+      focusedCard.scrollIntoView({block: 'nearest'});
+    }
+  }
+  document.addEventListener('keydown', function (e) {
+    var typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '');
+    if (typing || selectionMode || e.metaKey || e.ctrlKey) return;
+    var cards = Array.from(document.querySelectorAll('.band-active .card'));
+    if ((e.key === 'j' || e.key === 'k') && cards.length) {
+      e.preventDefault();
+      var idx = focusedCard ? cards.indexOf(focusedCard) : -1;
+      idx = e.key === 'j' ? Math.min(idx + 1, cards.length - 1) : Math.max(idx - 1, 0);
+      setFocusedCard(cards[idx]);
+      return;
+    }
+    if (!focusedCard || cards.indexOf(focusedCard) === -1) return;
+    if (e.key === 'Enter') { e.preventDefault(); openDetail(focusedCard.getAttribute('data-job-id')); return; }
+    if (e.key === 'r') {
+      e.preventDefault();
+      moveJob(focusedCard.getAttribute('data-job-id'), 'rejected', focusedCard);
+      setFocusedCard(null);
+      return;
+    }
+    if (e.key === 'o') {
+      var url = focusedCard.getAttribute('data-url');
+      if (url) window.open(url, '_blank', 'noopener');
+      return;
+    }
+    if (e.key === 'a') {
+      e.preventDefault();
+      var col = focusedCard.closest('.kanban-cards');
+      var status = col ? col.getAttribute('data-status') : null;
+      var stageIdx = FUNNEL_ORDER.indexOf(status);
+      if (stageIdx === -1 || stageIdx + 1 >= FUNNEL_ORDER.length) return;
+      var next = FUNNEL_ORDER[stageIdx + 1];
+      var jobId = focusedCard.getAttribute('data-job-id');
+      var targetCol = document.querySelector('.band-active .kanban-cards[data-status="' + next + '"]');
+      var card = focusedCard;
+      moveJob(jobId, next, card, status);
+      if (targetCol) { targetCol.appendChild(card); setFocusedCard(card); }
+    }
   });
 
   // Selection mode + bulk actions (design_handoff_review_ui Turn 8)
