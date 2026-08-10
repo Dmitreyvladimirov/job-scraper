@@ -63,7 +63,7 @@
       {% if job.current_status == 'rejected' %}
         <button type="button" class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status" hx-vals='{"new_status": "{{ job.rejected_from or "found" }}"}' hx-swap="none" hx-on::after-request="if(event.detail.successful) location.reload()">Restore → {{ status_labels.get(job.rejected_from, "Found") }}</button>
       {% else %}
-        <button type="button" class="btn btn-secondary" hx-get="/jobs/{{ job.id }}/reject-form" hx-target="#reject-modal-slot" hx-swap="innerHTML" onclick="document.getElementById('job-detail-dialog').remove()">Reject…</button>
+        <button type="button" class="btn btn-secondary" hx-get="/jobs/{{ job.id }}/reject-form" hx-target="#reject-modal-slot" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){var d=document.getElementById('job-detail-dialog');if(d)d.remove();}">Reject…</button>
         {% if next_status %}<button type="button" class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status" hx-vals='{"new_status": "{{ next_status }}"}' hx-swap="none" hx-on::after-request="if(event.detail.successful) location.reload()">Advance → {{ status_labels.get(next_status, next_status) }}</button>{% endif %}
       {% endif %}
     </div>

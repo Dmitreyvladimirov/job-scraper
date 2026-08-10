@@ -3,13 +3,17 @@
 {% block head %}
 <style>
   .kanban-desktop { display: grid; grid-template-columns: repeat(6, 1fr); padding: 4px 0 10px; }
-  .kanban-col { padding: 0 12px; border-right: 1px solid var(--color-divider); min-height: 60px; }
+  .kanban-col { display: flex; flex-direction: column; padding: 0 12px; border-right: 1px solid var(--color-divider); min-height: 60px; }
   .kanban-col:last-child { border-right: none; }
   .kanban-col-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 7px; margin-bottom: 12px; }
   .band-active .kanban-col-head { border-bottom: 1px solid var(--color-text); }
   .band-rejected .kanban-col-head { border-bottom: 1px solid var(--color-divider); }
   .band-rejected .kanban-col-head span:first-child { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--color-neutral-600); }
-  .kanban-cards { display: grid; gap: 9px; min-height: 40px; }
+  /* flex:1 so the actual Sortable drop target fills the whole column height — CSS grid
+     stretches every .kanban-col to match the tallest column (Found, with hundreds of
+     cards), and without this the drop target stayed only as tall as its own content,
+     making most of a near-empty column's visible area silently reject drops. */
+  .kanban-cards { display: grid; align-content: start; gap: 9px; min-height: 40px; flex: 1; }
   .kanban-empty { border: 1px dashed var(--color-divider); border-radius: var(--radius-md); padding: 14px 10px; text-align: center; font-size: 11.5px; color: var(--color-neutral-500); }
   .band-head { display: flex; align-items: center; gap: 10px; padding: 12px 0 10px; cursor: pointer; user-select: none; }
   .band-head:hover .band-chevron { color: var(--color-accent); }
@@ -216,6 +220,7 @@
   <div id="sheet-options"></div>
 </dialog>
 <div id="detail-modal-slot"></div>
+<div id="reject-modal-slot"></div>
 
 <div id="bulk-bar">
   <span style="font-size:13px;font-feature-settings:'tnum'"><b id="bulk-count" style="color:var(--color-accent-700)">0</b> selected</span>
