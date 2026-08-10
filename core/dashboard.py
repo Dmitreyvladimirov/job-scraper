@@ -318,7 +318,7 @@ ALL_DOMAINS = ["AI/ML"] + list(DOMAIN_COLORS.keys()) + ["Other"]
 def kanban(
     request: Request,
     q: str | None = Query(default=None),
-    score_min: int | None = Query(default=None),
+    score_min: str | None = Query(default=None),
     domain: str | None = Query(default=None),
     sort: str = Query(default="newest"),
 ):
@@ -329,13 +329,22 @@ def kanban(
     q = (q or "").strip() or None
     sort = sort if sort in ("newest", "score") else "newest"
     domains = [d for d in (domain or "").split(",") if d in ALL_DOMAINS]
-    board = db.get_kanban_jobs(q=q, score_min=score_min, domains=domains or None, sort=sort)
+    # score_min is typed as str, not int, so an empty "Min score" field (browsers submit
+    # score_min= for a blank number input, not an omitted param) doesn't 422 before this
+    # line ever runs — FastAPI's own int coercion has no concept of "blank means unset".
+    score_min_val = None
+    if score_min:
+        try:
+            score_min_val = int(score_min)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid score_min: {score_min!r}")
+    board = db.get_kanban_jobs(q=q, score_min=score_min_val, domains=domains or None, sort=sort)
     active_total = sum(len(v) for v in board["active"].values())
     rejected_total = sum(len(v) for v in board["rejected"].values())
     rejected_breakdown = [
         f"from {STATUS_LABELS[s]} {len(board['rejected'][s])}" for s in FUNNEL_ORDER if board["rejected"][s]
     ]
-    active_filters = (1 if score_min is not None else 0) + len(domains)
+    active_filters = (1 if score_min_val is not None else 0) + len(domains)
     funnel = db.get_funnel_stats()
     return templates.TemplateResponse(request, "kanban.html", {
         "board": board,
@@ -345,7 +354,7 @@ def kanban(
         "rejected_total": rejected_total,
         "rejected_breakdown": rejected_breakdown,
         "q": q,
-        "score_min": score_min,
+        "score_min": score_min_val,
         "domains": domains,
         "all_domains": ALL_DOMAINS,
         "active_filters": active_filters,

@@ -215,6 +215,19 @@ def test_kanban_filters_by_score_and_domain():
     assert r.status_code == 200
 
 
+def test_kanban_blank_score_min_from_filter_form_does_not_422():
+    # Regression: the "Min score" filter input submits score_min= (empty string) when
+    # left blank, not an omitted param — an int-typed Query param 422s on that before
+    # the route body ever runs.
+    r = _authenticated_client().get("/kanban", params={"score_min": ""})
+    assert r.status_code == 200
+
+
+def test_kanban_invalid_score_min_400():
+    r = _authenticated_client().get("/kanban", params={"score_min": "not-a-number"})
+    assert r.status_code == 400
+
+
 def test_kanban_sort_score():
     r = _authenticated_client().get("/kanban", params={"sort": "score"})
     assert r.status_code == 200
