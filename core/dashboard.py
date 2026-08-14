@@ -457,6 +457,41 @@ def reject_form(request: Request, job_id: int):
     })
 
 
+@app.get("/jobs/new-form", response_class=HTMLResponse)
+def new_job_form(request: Request):
+    _authenticate(request)
+    return templates.TemplateResponse(request, "partials/add_job_form.html", {})
+
+
+@app.post("/jobs", response_class=HTMLResponse)
+def create_job(
+    request: Request,
+    title: str = Form(...),
+    company: str = Form(default=""),
+    url: str = Form(default=""),
+    source: str = Form(default=""),
+    salary: str = Form(default=""),
+    location: str = Form(default=""),
+    description: str = Form(default=""),
+):
+    _authenticate(request)
+    title = title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
+    db.create_manual_job({
+        "title": title,
+        "company": company.strip() or None,
+        "url": url.strip() or None,
+        "apply_url": url.strip() or None,
+        "source": source.strip() or "Manual",
+        "salary": salary.strip() or None,
+        "location": location.strip() or None,
+        "description": description.strip() or None,
+        "published": None,
+    })
+    return HTMLResponse("")
+
+
 @app.get("/jobs/bulk-reject-form", response_class=HTMLResponse)
 def bulk_reject_form(request: Request, ids: str = Query(...)):
     """Turn 8b — one reason applied to every selected job; any row can be dropped

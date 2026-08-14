@@ -1,0 +1,35 @@
+<div class="dialog-backdrop" id="reject-dialog" style="z-index:50">
+  <form class="dialog" hx-post="/jobs" hx-swap="none" hx-on::after-request="if(event.detail.successful){location.reload();}">
+    <div class="dialog-title">Add job manually</div>
+    <div class="dialog-body">
+      <div style="font-size:12px;color:var(--color-neutral-600);margin-bottom:12px">Lands in Review (found), same as a scraped card.</div>
+      <div style="display:grid;gap:10px">
+        <label style="display:grid;gap:4px;font-size:12px;color:var(--color-neutral-700)">Title *
+          <input type="text" name="title" required class="input">
+        </label>
+        <label style="display:grid;gap:4px;font-size:12px;color:var(--color-neutral-700)">Company
+          <input type="text" name="company" class="input">
+        </label>
+        <label style="display:grid;gap:4px;font-size:12px;color:var(--color-neutral-700)">Posting URL
+          <input type="url" name="url" class="input">
+        </label>
+        <label style="display:grid;gap:4px;font-size:12px;color:var(--color-neutral-700)">Source
+          <input type="text" name="source" placeholder="Manual" class="input">
+        </label>
+        <label style="display:grid;gap:4px;font-size:12px;color:var(--color-neutral-700)">Salary
+          <input type="text" name="salary" class="input">
+        </label>
+        <label style="display:grid;gap:4px;font-size:12px;color:var(--color-neutral-700)">Location
+          <input type="text" name="location" class="input">
+        </label>
+        <label style="display:grid;gap:4px;font-size:12px;color:var(--color-neutral-700)">Description
+          <textarea name="description" rows="3" class="input"></textarea>
+        </label>
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('reject-dialog').remove()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Add job</button>
+    </div>
+  </form>
+</div>

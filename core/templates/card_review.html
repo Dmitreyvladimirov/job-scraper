@@ -10,6 +10,7 @@
     <a class="seg-opt" href="/review?sort=score" style="{% if sort == 'score' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Score</a>
     <a class="seg-opt" href="/review?sort=source" style="{% if sort == 'source' %}color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent){% endif %};text-decoration:none;color:inherit">Source</a>
   </div>
+  <button class="btn btn-secondary" hx-get="/jobs/new-form" hx-target="#reject-modal-slot" hx-swap="innerHTML">+ Add job</button>
 </div>
 
 <div style="padding:10px 0 26px" id="review-list">

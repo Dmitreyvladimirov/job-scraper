@@ -288,6 +288,16 @@ def log_job(
         conn.close()
 
 
+def create_manual_job(job: dict) -> None:
+    """A card added by hand through the dashboard, not found by a scraper run. Still
+    needs a run_id (jobs.run_id is NOT NULL), so it gets its own single-job run; goes
+    through log_job() with outcome='qualified' so it lands in the review queue exactly
+    like a pipeline-found card (current_status='found')."""
+    run_id = start_run(0, {"manual": 1})
+    finish_run(run_id, {"qualified": 1}, gpt_calls=0)
+    log_job(run_id, job, outcome="qualified")
+
+
 def load_seen_jobs() -> tuple[set[str], set[tuple[str, str]]]:
     """Return (seen_urls, seen_keys) — source of truth for dedup."""
     seen_urls: set[str] = set()

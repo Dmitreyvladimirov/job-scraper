@@ -50,6 +50,9 @@
 
 <div style="display:flex;align-items:center;gap:4px;margin-bottom:12px;position:relative">
   <span style="font-family:var(--font-heading);font-weight:600;font-size:17px;margin-right:auto">Kanban</span>
+  <span class="btn btn-icon btn-ghost" title="Add job" style="cursor:pointer" hx-get="/jobs/new-form" hx-target="#reject-modal-slot" hx-swap="innerHTML">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>
+  </span>
   <span class="btn btn-icon btn-ghost" title="Filter" style="position:relative;cursor:pointer;{% if active_filters %}color:var(--color-accent-700){% endif %}" onclick="event.stopPropagation();toggleEl('filter-popover')">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="7" y1="12" x2="17" y2="12"></line><line x1="10" y1="17" x2="14" y2="17"></line></svg>
     {% if active_filters %}<span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:var(--color-accent);color:#fff;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;font-feature-settings:'tnum'">{{ active_filters }}</span>{% endif %}
