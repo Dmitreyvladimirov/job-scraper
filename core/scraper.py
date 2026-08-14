@@ -1,11 +1,13 @@
 import re
 import sys
 import logging
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 import filters
 import ats
+import scoring_client
 import db
 import notion_client
 import telegram
@@ -14,7 +16,10 @@ import sheets
 # weworkremotely, remotive, remoteok, arbeitnow — API-side issues (ignored search
 # params / stale backlog), 21/174 qualified from ~19k rows. Files kept in sources/.
 from sources import jobicy, telegram_channels, jobgether
-from config import ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, validate_secrets
+from config import (
+    ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, USE_CLOUD_SCORING,
+    validate_secrets,
+)
 from utils import strip_html, enrich_url, normalize_job_key, fetch_jd_from_url, fetch_url_generic
 
 logging.basicConfig(
@@ -25,6 +30,55 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 RESUME_PATH = Path(__file__).parent / "base_resume.md"
+
+
+@dataclass
+class Scoring:
+    """One vacancy's scoring outcome plus the provenance columns db.log_job() records.
+    `result` is what the run acts on; in shadow mode the cloud's opinion rides along in
+    shadow_* without touching it."""
+
+    result: ats.ATSResult | None
+    source: str  # 'local' | 'cloud' — which scorer produced `result`
+    pipeline_run_id: str
+    shadow_score: int | None = None
+    shadow_payload: dict | None = None
+    config_error: str = ""  # set only when cloud auth/deployment is broken
+
+
+def score_job(job: dict, resume: str, pipeline_run_id: str) -> Scoring:
+    """Route one vacancy to the scorer USE_CLOUD_SCORING selects. Off and shadow both
+    let ats.analyze() decide, so switching them on cannot change any outcome — shadow
+    only adds a second, recorded-but-ignored opinion."""
+    if USE_CLOUD_SCORING == "1":
+        result, error_kind = scoring_client.analyze_via_cloud(job, pipeline_run_id)
+        return Scoring(
+            result=result,
+            source="cloud",
+            pipeline_run_id=pipeline_run_id,
+            config_error=(
+                f"{scoring_client.SCORING_SERVICE_URL}/v1/score отклонил запрос "
+                f"(auth или конфиг сервиса — код статуса в логах). "
+                f"Первая вакансия: {job.get('title')} @ {job.get('company')}"
+            ) if error_kind == "config" else "",
+        )
+
+    result = ats.analyze(job, resume)
+    scoring = Scoring(result=result, source="local", pipeline_run_id=pipeline_run_id)
+
+    if USE_CLOUD_SCORING == "shadow":
+        cloud_result, error_kind = scoring_client.analyze_via_cloud(job, pipeline_run_id)
+        if cloud_result is None:
+            # Shadow failures cost nothing — the local score already decided this
+            # vacancy — so they warn and are never counted as ats_error.
+            logger.warning(f"  ⚠️ Shadow cloud scoring failed ({error_kind}): {job['title']} @ {job['company']}")
+        else:
+            scoring.shadow_score = cloud_result.score
+            scoring.shadow_payload = asdict(cloud_result)
+            local = result.score if result else None
+            logger.info(f"  shadow: local={local} cloud={cloud_result.score} [{pipeline_run_id}]")
+
+    return scoring
 
 
 def load_resume() -> str:
@@ -104,6 +158,8 @@ def run() -> None:
     gpt_calls = 0
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     run_id = db.start_run(total_fetched, source_counts)
+    score_seq = 0
+    cloud_config_alerted = False
 
     for job in jobs:
         if not job.get("url"):
@@ -195,14 +251,25 @@ def run() -> None:
             db.log_job(run_id, job, "location")
             continue
 
-        result = ats.analyze(job, resume)
+        score_seq += 1
+        pipeline_run_id = f"js-{run_id}-{score_seq}"
+        scoring = score_job(job, resume, pipeline_run_id)
+        result = scoring.result
         gpt_calls += 1
+
+        # One alert per run, not one per vacancy: a bad token or an unconfigured service
+        # fails all ~40 calls identically, so 40 Telegram messages would bury the signal.
+        # Each vacancy still takes the ats_error path below, so none are marked seen.
+        if scoring.config_error and not cloud_config_alerted:
+            telegram.send_error(f"Cloud scoring config error: {scoring.config_error}")
+            cloud_config_alerted = True
 
         # Analysis failure (network/parse) — do NOT mark as seen or rejected,
         # so the job gets re-scored on the next run instead of being lost forever
         if result is None:
             counts["ats_error"] += 1
-            db.log_job(run_id, job, "ats_error")
+            db.log_job(run_id, job, "ats_error", pipeline_run_id=pipeline_run_id,
+                       scoring_source=scoring.source)
             logger.warning(f"  ⚠️ ATS error — will retry next run: {job['title']} @ {job['company']}")
             continue
 
@@ -220,7 +287,9 @@ def run() -> None:
                        role_score=result.role_score, domain_score=result.domain_score,
                        domain_value_score=result.domain_value_score, domain_exp_score=result.domain_exp_score,
                        keyword_score=result.keyword_score, location_score=result.location_score,
-                       location_reason=result.location_reason or None)
+                       location_reason=result.location_reason or None,
+                       pipeline_run_id=pipeline_run_id, scoring_source=scoring.source,
+                       shadow_score=scoring.shadow_score, shadow_payload=scoring.shadow_payload)
             continue
 
         company_key = job.get("company", "").lower().strip()
@@ -239,7 +308,9 @@ def run() -> None:
                    role_score=result.role_score, domain_score=result.domain_score,
                    domain_value_score=result.domain_value_score, domain_exp_score=result.domain_exp_score,
                    keyword_score=result.keyword_score, location_score=result.location_score,
-                   location_reason=result.location_reason or None)
+                   location_reason=result.location_reason or None,
+                   pipeline_run_id=pipeline_run_id, scoring_source=scoring.source,
+                   shadow_score=scoring.shadow_score, shadow_payload=scoring.shadow_payload)
         top_jobs.append({
             "title": job["title"],
             "company": job["company"],

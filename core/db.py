@@ -106,6 +106,20 @@ def init_db() -> None:
                 # job's current_status becomes 'applied'.
                 cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS applied_at TIMESTAMP")
 
+                # Cloud scoring (USE_CLOUD_SCORING) — additive, idempotent.
+                # pipeline_run_id correlates a row with the same vacancy's records in the
+                # resumebuilder-cloud DB; indexed because that join is the whole point of it.
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS pipeline_run_id TEXT")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_pipeline_run_id ON jobs(pipeline_run_id)")
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS location TEXT")
+                # 'local' | 'cloud' — which scorer produced ats_score on this row.
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS scoring_source TEXT")
+                # Shadow mode only: the cloud's verdict, recorded beside the local one that
+                # actually decided. shadow_payload keeps the full ScoreResult so the
+                # comparison can look at sub-scores and reasons, not just the total.
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS shadow_score INTEGER")
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS shadow_payload JSONB")
+
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS status_log (
                         id         SERIAL PRIMARY KEY,
@@ -202,14 +216,23 @@ def log_job(
     keyword_score: int | None = None,
     location_score: int | None = None,
     location_reason: str | None = None,
+    pipeline_run_id: str | None = None,
+    scoring_source: str | None = None,
+    shadow_score: int | None = None,
+    shadow_payload: dict | None = None,
 ) -> None:
     """why_apply/keywords/penalty_reason/score-breakdown are new (SPEC_FRONTEND.md v1.2,
     Review UI) — optional/backward-compatible params, wired from scraper.py's low_score
     and qualified call sites (ats_error/role/language/etc. calls stay as before, no
     ATSResult available at those points). salary is read straight off `job` (every
-    source already produces it) rather than needing a separate kwarg at each call site."""
+    source already produces it) rather than needing a separate kwarg at each call site.
+    location is read the same way, so it lands on filtered rows too, not just scored ones.
+
+    pipeline_run_id/scoring_source/shadow_* are the cloud-scoring additions
+    (USE_CLOUD_SCORING) — same optional/backward-compatible shape."""
     desc = (job.get("description") or "")[:8000]
     salary = job.get("salary") or None
+    location = job.get("location") or None
     # Only 'qualified' jobs enter the review funnel — every other outcome (role/language/
     # location/stale/dedup/gpt_limit/low_score/ats_error) is an auto-filtered row that should
     # never appear on /review or /kanban.
@@ -224,8 +247,10 @@ def log_job(
                         description, ats_score, domain, why_not, outcome, current_status,
                         why_apply, matched_keywords, missed_keywords, penalty_reason,
                         role_score, domain_score, domain_value_score, domain_exp_score,
-                        keyword_score, location_score, location_reason, salary)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        keyword_score, location_score, location_reason, salary,
+                        location, pipeline_run_id, scoring_source, shadow_score, shadow_payload)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                               %s,%s,%s,%s,%s)""",
                     (
                         run_id,
                         job.get("url"),
@@ -252,6 +277,11 @@ def log_job(
                         location_score,
                         location_reason,
                         salary,
+                        location,
+                        pipeline_run_id,
+                        scoring_source,
+                        shadow_score,
+                        json.dumps(shadow_payload) if shadow_payload is not None else None,
                     ),
                 )
     finally:

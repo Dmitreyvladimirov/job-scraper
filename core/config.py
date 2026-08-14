@@ -32,6 +32,14 @@ TELEGRAM_JOB_CHANNELS: list[str] = [
 # the scraper to run — enrich_url() falls back to the aggregator link when unset.
 SCRAPINGBEE_API_KEY = os.environ.get("SCRAPINGBEE_API_KEY", "")
 
+# Cloud scoring rollout (resumebuilder-cloud /v1/score). Three states:
+#   ""       — off, ats.analyze() decides everything (default)
+#   "shadow" — ats.analyze() still decides; the cloud is called in parallel and its
+#              result is only recorded, so the two scorers can be compared on real
+#              runs before anything depends on the cloud one
+#   "1"      — cloud decides; ats.py stays in the tree as the fallback to roll back to
+USE_CLOUD_SCORING = os.environ.get("USE_CLOUD_SCORING", "")
+
 
 def validate_secrets() -> None:
     """Call once at startup to fail fast on missing secrets."""

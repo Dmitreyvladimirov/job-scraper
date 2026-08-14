@@ -28,7 +28,11 @@ def _send(text: str) -> None:
 def send_run_summary(counts: dict, top_jobs: list[dict], source_counts: dict | None = None) -> None:
     """One message per scraper run — summary only, no per-vacancy spam."""
     qualified = counts["qualified"]
-    if qualified == 0:
+    ats_errors = counts.get("ats_error", 0)
+    # A run where scoring broke for every vacancy also has 0 qualified — staying silent
+    # there hides exactly the failure worth reporting, so ats_errors overrides the
+    # "nothing to say" shortcut.
+    if qualified == 0 and ats_errors == 0:
         logger.info("Telegram: summary skipped (0 qualified)")
         return
 
@@ -44,12 +48,15 @@ def send_run_summary(counts: dict, top_jobs: list[dict], source_counts: dict | N
     for j in top_jobs[:3]:
         top_lines += f"• {j['title']} @ {j['company']} — {j['score']}/100\n"
 
+    ats_error_line = f"⚠️ Ошибок скоринга: *{ats_errors}* (будут перепроверены в следующем прогоне)\n" if ats_errors else ""
+
     dashboard_link = f" | [Дашборд]({_DASHBOARD_URL})" if _DASHBOARD_URL else ""
     text = (
         f"🤖 *Прогон завершён*\n\n"
         f"{sources_line}"
         f"✅ Новых вакансий: *{qualified}*\n"
-        f"📊 Всего проверено: {total} | Дубликаты: {deduped} | Низкий скор: {low_score}\n\n"
+        f"📊 Всего проверено: {total} | Дубликаты: {deduped} | Низкий скор: {low_score}\n"
+        f"{ats_error_line}\n"
         f"{top_lines}"
         f"\n[Открыть Notion]({NOTION_DB_URL}){dashboard_link}"
     )
