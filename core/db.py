@@ -288,6 +288,38 @@ def log_job(
         conn.close()
 
 
+def find_manual_duplicate(url: str | None, company: str | None, title: str) -> dict | None:
+    """Pre-insert duplicate probe for the dashboard's manual Add-job form. Matches by
+    exact URL first, then by case-insensitive (company, title). Deliberately simpler
+    than the scraper's normalize_job_key() dedup — a human pasting a LinkedIn posting
+    needs a warning on the obvious match, not fuzzy-key coverage."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            if url:
+                cur.execute(
+                    "SELECT id, title, company, source, current_status, logged_at FROM jobs "
+                    "WHERE url = %s OR apply_url = %s ORDER BY id DESC LIMIT 1",
+                    (url, url),
+                )
+                row = cur.fetchone()
+                if row:
+                    return dict(row)
+            if company:
+                cur.execute(
+                    "SELECT id, title, company, source, current_status, logged_at FROM jobs "
+                    "WHERE lower(trim(company)) = lower(trim(%s)) "
+                    "AND lower(trim(title)) = lower(trim(%s)) ORDER BY id DESC LIMIT 1",
+                    (company, title),
+                )
+                row = cur.fetchone()
+                if row:
+                    return dict(row)
+    finally:
+        conn.close()
+    return None
+
+
 def create_manual_job(job: dict) -> None:
     """A card added by hand through the dashboard, not found by a scraper run. Still
     needs a run_id (jobs.run_id is NOT NULL), so it gets its own single-job run; goes

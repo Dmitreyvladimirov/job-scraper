@@ -473,11 +473,27 @@ def create_job(
     salary: str = Form(default=""),
     location: str = Form(default=""),
     description: str = Form(default=""),
+    force: str = Form(default="0"),
 ):
     _authenticate(request)
     title = title.strip()
     if not title:
         raise HTTPException(status_code=400, detail="Title is required")
+
+    # A hand-added vacancy is the likeliest of all to already exist (the scraper may
+    # have found it first) — warn instead of silently creating a twin. force=1 comes
+    # from the warning dialog's "Add anyway".
+    if force != "1":
+        existing = db.find_manual_duplicate(url.strip() or None, company.strip() or None, title)
+        if existing:
+            fields = [
+                ("title", title), ("company", company), ("url", url), ("source", source),
+                ("salary", salary), ("location", location), ("description", description),
+            ]
+            return templates.TemplateResponse(request, "partials/add_job_duplicate.html", {
+                "existing": existing, "fields": fields,
+            })
+
     db.create_manual_job({
         "title": title,
         "company": company.strip() or None,
@@ -489,7 +505,13 @@ def create_job(
         "description": description.strip() or None,
         "published": None,
     })
-    return HTMLResponse("")
+    # Replaces the dialog (hx-swap=outerHTML on #add-job-dialog): the form vanishes and
+    # the swapped-in script fires a toast — no location.reload(), so kanban filters,
+    # selection and scroll position survive. The new card appears on the next page load.
+    # .replace guards against </script> breakout from a pasted title — json.dumps
+    # escapes quotes but not the '</' sequence that would close the script tag.
+    toast_title = json.dumps(f"Added: {title}").replace("</", "<\\/")
+    return HTMLResponse(f"<script>window.showToast && window.showToast({toast_title})</script>")
 
 
 @app.get("/jobs/bulk-reject-form", response_class=HTMLResponse)

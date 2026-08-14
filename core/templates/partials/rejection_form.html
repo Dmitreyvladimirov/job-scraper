@@ -1,4 +1,4 @@
-<div class="dialog-backdrop" id="reject-dialog" style="z-index:50">
+<div class="dialog-backdrop" id="reject-dialog" style="z-index:50" onclick="if(event.target===this)this.remove()">
   <form class="dialog" hx-post="/jobs/{{ job.id }}/status" hx-swap="none" hx-on::after-request="if(event.detail.successful){document.getElementById('reject-dialog').remove();var row=document.getElementById('job-{{ job.id }}');if(row){row.remove();}else{location.reload();}}">
     <input type="hidden" name="new_status" value="rejected">
     <div class="dialog-title">Reject — {{ job.title }}</div>
@@ -25,4 +25,14 @@
       <button type="submit" class="btn btn-primary">Reject vacancy</button>
     </div>
   </form>
+  <script>
+    (function () {
+      const dlg = document.getElementById('reject-dialog');
+      function onKey(e) {
+        if (!document.body.contains(dlg)) { document.removeEventListener('keydown', onKey); return; }
+        if (e.key === 'Escape') dlg.remove();
+      }
+      document.addEventListener('keydown', onKey);
+    })();
+  </script>
 </div>

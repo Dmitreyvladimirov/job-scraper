@@ -1,0 +1,25 @@
+<div class="dialog-backdrop" id="add-job-dialog" style="z-index:50" onclick="if(event.target===this)this.remove()">
+  <form class="dialog" hx-post="/jobs" hx-target="#add-job-dialog" hx-swap="outerHTML">
+    <input type="hidden" name="force" value="1">
+    {% for name, value in fields %}
+    <input type="hidden" name="{{ name }}" value="{{ value }}">
+    {% endfor %}
+    <div class="dialog-title">Looks like a duplicate</div>
+    <div class="dialog-body">
+      <div style="font-size:13px;margin-bottom:10px">This vacancy seems to already exist:</div>
+      <div style="border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:10px 12px">
+        <div style="font-weight:600">{{ existing.title }}</div>
+        <div style="font-size:12px;color:var(--color-neutral-600);margin-top:2px">
+          {{ existing.company or '—' }} · {{ existing.source or '—' }}
+          {% if existing.current_status %} · status: {{ existing.current_status }}{% endif %}
+          {% if existing.logged_at %} · added {{ existing.logged_at.strftime('%Y-%m-%d') }}{% endif %}
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--color-neutral-600);margin-top:10px">Add anyway creates a second, independent card.</div>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('add-job-dialog').remove()">Cancel</button>
+      <button type="submit" class="btn btn-primary">Add anyway</button>
+    </div>
+  </form>
+</div>
