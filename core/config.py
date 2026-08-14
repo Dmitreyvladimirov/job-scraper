@@ -107,15 +107,18 @@ DOMAIN_COLORS = {
     "HealthTech": "25",
 }
 
-# Rejection reasons — 7 categories (FRONTEND_DESIGN_BRIEF.md, + "old"). geo_restricted_auto
-# is set programmatically by the existing ResumeBuilder pipeline script; "old" is set by
-# bulk maintenance scripts (Notion status sync, stale-backlog cleanup) reconciling cards
-# that were never individually reviewed — neither is selectable through the user-facing
-# rejection form, both are excluded from USER_REJECTION_REASONS below.
+# Rejection reasons — geo_restricted_auto is set programmatically by the existing
+# ResumeBuilder pipeline script; "old" is set by bulk maintenance scripts (Notion status
+# sync, stale-backlog cleanup) reconciling cards that were never individually reviewed —
+# neither is selectable through the user-facing rejection form, both are excluded from
+# USER_REJECTION_REASONS below. location_mismatch merges the former remote_one_country /
+# not_remote_at_all pair (existing rows migrated in Postgres, 2026-08-14); low_salary
+# added the same day — both per Dimitry's decision after the scoring-quality labeling
+# session showed location/language issues dominate his real rejection reasons.
 REJECTION_REASONS = [
     "low_score_after_review",
-    "remote_one_country",
-    "not_remote_at_all",
+    "location_mismatch",
+    "low_salary",
     "inactive_closed",
     "bad_in_general",
     "old",
@@ -123,8 +126,8 @@ REJECTION_REASONS = [
 ]
 REJECTION_REASON_LABELS = {
     "low_score_after_review": "Low score after manual review",
-    "remote_one_country": "Remote, but only within one country",
-    "not_remote_at_all": "Not remote at all",
+    "location_mismatch": "Location / remote mismatch",
+    "low_salary": "Low salary",
     "inactive_closed": "Inactive / closed posting",
     "bad_in_general": "Bad fit in general",
     "old": "Old — bulk-rejected, never individually reviewed",
