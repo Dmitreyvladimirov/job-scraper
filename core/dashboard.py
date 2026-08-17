@@ -14,6 +14,7 @@ import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -512,6 +513,71 @@ def create_job(
     # escapes quotes but not the '</' sequence that would close the script tag.
     toast_title = json.dumps(f"Added: {title}").replace("</", "<\\/")
     return HTMLResponse(f"<script>window.showToast && window.showToast({toast_title})</script>")
+
+
+def _authenticate_bearer(request: Request) -> None:
+    """API-key auth for machine callers (ResumeBuilder Cards service) — same
+    DASHBOARD_TOKEN secret as the browser login, sent as a Bearer header instead
+    of the cookie, so no extra secret to provision or rotate."""
+    if not TOKEN:
+        raise HTTPException(status_code=503, detail="Dashboard misconfigured: DASHBOARD_TOKEN not set")
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer ") or not hmac.compare_digest(auth[len("Bearer "):], TOKEN):
+        raise HTTPException(status_code=401, detail="Invalid or missing bearer token")
+
+
+class ApiJobPayload(BaseModel):
+    """Body of POST /api/jobs — a vacancy Dimitry applied to via ResumeBuilder."""
+
+    title: str = Field(..., min_length=1)
+    company: str | None = None
+    url: str | None = None
+    description: str | None = None
+    source: str = "ResumeBuilder"
+    salary: str | None = None
+    location: str | None = None
+    ats_score: int | None = None
+    pipeline_run_id: str | None = None
+
+
+@app.post("/api/jobs")
+def api_create_job(payload: ApiJobPayload, request: Request):
+    """Machine twin of the Add-job form for ResumeBuilder's Step 2.5: upserts the
+    vacancy and moves it to 'applied'. A URL/company+title match updates the existing
+    row (the scraper may well have found the vacancy first) instead of creating a
+    twin card on the kanban."""
+    _authenticate_bearer(request)
+    title = payload.title.strip()
+    company = (payload.company or "").strip() or None
+    url = (payload.url or "").strip() or None
+
+    existing = db.find_manual_duplicate(url, company, title)
+    if existing:
+        job_id, created = existing["id"], False
+    else:
+        job_id = db.create_manual_job(
+            {
+                "title": title,
+                "company": company,
+                "url": url,
+                "apply_url": url,
+                "source": payload.source.strip() or "ResumeBuilder",
+                "salary": (payload.salary or "").strip() or None,
+                "location": (payload.location or "").strip() or None,
+                "description": (payload.description or "").strip() or None,
+                "published": None,
+            },
+            ats_score=payload.ats_score,
+            pipeline_run_id=payload.pipeline_run_id,
+        )
+        created = True
+    transition = db.mark_job_applied(job_id, source="resumebuilder")
+    return JSONResponse({
+        "job_id": job_id,
+        "created": created,
+        "status": transition["new_status"],
+        "previous_status": transition["old_status"],
+    })
 
 
 @app.get("/jobs/bulk-reject-form", response_class=HTMLResponse)

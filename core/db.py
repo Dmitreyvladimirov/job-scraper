@@ -220,7 +220,7 @@ def log_job(
     scoring_source: str | None = None,
     shadow_score: int | None = None,
     shadow_payload: dict | None = None,
-) -> None:
+) -> int:
     """why_apply/keywords/penalty_reason/score-breakdown are new (SPEC_FRONTEND.md v1.2,
     Review UI) — optional/backward-compatible params, wired from scraper.py's low_score
     and qualified call sites (ats_error/role/language/etc. calls stay as before, no
@@ -250,7 +250,8 @@ def log_job(
                         keyword_score, location_score, location_reason, salary,
                         location, pipeline_run_id, scoring_source, shadow_score, shadow_payload)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                               %s,%s,%s,%s,%s)""",
+                               %s,%s,%s,%s,%s)
+                       RETURNING id""",
                     (
                         run_id,
                         job.get("url"),
@@ -284,8 +285,10 @@ def log_job(
                         json.dumps(shadow_payload) if shadow_payload is not None else None,
                     ),
                 )
+                job_id = cur.fetchone()["id"]
     finally:
         conn.close()
+    return job_id
 
 
 def find_manual_duplicate(url: str | None, company: str | None, title: str) -> dict | None:
@@ -320,14 +323,53 @@ def find_manual_duplicate(url: str | None, company: str | None, title: str) -> d
     return None
 
 
-def create_manual_job(job: dict) -> None:
+def create_manual_job(
+    job: dict, ats_score: int | None = None, pipeline_run_id: str | None = None
+) -> int:
     """A card added by hand through the dashboard, not found by a scraper run. Still
     needs a run_id (jobs.run_id is NOT NULL), so it gets its own single-job run; goes
     through log_job() with outcome='qualified' so it lands in the review queue exactly
-    like a pipeline-found card (current_status='found')."""
+    like a pipeline-found card (current_status='found').
+
+    ats_score/pipeline_run_id come from the ResumeBuilder /api/jobs path, where the
+    vacancy was already scored before Dimitry applied; the dashboard's Add-job form
+    passes neither."""
     run_id = start_run(0, {"manual": 1})
     finish_run(run_id, {"qualified": 1}, gpt_calls=0)
-    log_job(run_id, job, outcome="qualified")
+    return log_job(
+        run_id, job, outcome="qualified", ats_score=ats_score, pipeline_run_id=pipeline_run_id
+    )
+
+
+def mark_job_applied(job_id: int, source: str = "resumebuilder") -> dict:
+    """Applied-transition for ResumeBuilder's /api/jobs: unlike update_job_status it
+    also accepts rows that never entered the funnel (current_status NULL — a scraped
+    vacancy the pipeline filtered out but Dimitry applied to anyway) and rows he had
+    marked rejected. No-op when the job already sits at applied or further, so a
+    duplicate application never drags a card backward in the funnel."""
+    job = get_job(job_id)
+    if not job:
+        raise ValueError(f"Unknown job id {job_id}")
+    old_status = job["current_status"]
+    if old_status in FUNNEL_ORDER and FUNNEL_ORDER.index(old_status) >= FUNNEL_ORDER.index("applied"):
+        return {"job_id": job_id, "old_status": old_status, "new_status": old_status}
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE jobs SET current_status = 'applied', rejection_reason = NULL, "
+                    "applied_at = NOW() WHERE id = %s",
+                    (job_id,),
+                )
+                cur.execute(
+                    "INSERT INTO status_log (job_id, old_status, new_status, source) VALUES (%s,%s,%s,%s)",
+                    (job_id, old_status, "applied", source),
+                )
+    finally:
+        conn.close()
+    logger.info(f"Status changed: job={job_id} {old_status} -> applied (via {source})")
+    return {"job_id": job_id, "old_status": old_status, "new_status": "applied"}
 
 
 def load_seen_jobs() -> tuple[set[str], set[tuple[str, str]]]:
