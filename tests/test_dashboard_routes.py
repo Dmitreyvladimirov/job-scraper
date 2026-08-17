@@ -393,6 +393,64 @@ def test_rescore_without_jd_reports_error_not_500(monkeypatch):
     assert "nothing to score" in r.text
 
 
+# --- 2026-08-17 batch: comments, merged dashboard, applied-today, tracker redirect ---
+
+def test_comments_reject_no_cookie():
+    assert _anon_client().post("/jobs/1/comments", data={"body": "x"}).status_code == 403
+    assert _anon_client().delete("/jobs/1/comments/1").status_code == 403
+
+
+def test_applied_today_rejects_no_cookie():
+    assert _anon_client().get("/applied-today").status_code == 403
+
+
+def test_add_comment_unknown_job_404(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: None)
+    r = _authenticated_client().post("/jobs/999999999/comments", data={"body": "x"})
+    assert r.status_code == 404
+
+
+def test_add_comment_empty_body_400(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job())
+    r = _authenticated_client().post("/jobs/1/comments", data={"body": "   "})
+    assert r.status_code == 400
+
+
+def test_add_and_delete_comment_roundtrip(monkeypatch):
+    notes = []
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job())
+    monkeypatch.setattr(dashboard.db, "add_comment", lambda job_id, body: notes.append(body) or 1)
+    monkeypatch.setattr(dashboard.db, "delete_comment", lambda job_id, cid: True)
+    monkeypatch.setattr(dashboard.db, "get_comments", lambda _id: [
+        {"id": 1, "body": b, "created_at": None} for b in notes
+    ])
+    c = _authenticated_client()
+    r = c.post("/jobs/1/comments", data={"body": "recruiter: Anna"})
+    assert r.status_code == 200 and "recruiter: Anna" in r.text
+    notes.clear()
+    r = c.delete("/jobs/1/comments/1")
+    assert r.status_code == 200 and "recruiter: Anna" not in r.text
+
+
+def test_tracker_redirects_to_dashboard():
+    r = _authenticated_client().get("/tracker", params={"from": "2026-08-01"}, follow_redirects=False)
+    assert r.status_code == 301
+    assert r.headers["location"] == "/dashboard?from=2026-08-01"
+
+
+def test_dashboard_serves_merged_page():
+    r = _authenticated_client().get("/dashboard")
+    assert r.status_code == 200
+    assert "Applied today" in r.text        # application stats present
+    assert "Scraper analytics" in r.text    # scraper section present
+
+
+def test_applied_today_modal_renders():
+    r = _authenticated_client().get("/applied-today")
+    assert r.status_code == 200
+    assert "applied-today-dialog" in r.text
+
+
 def test_bulk_reject_form_for_real_jobs():
     conn = dashboard.psycopg2.connect(
         dashboard.DATABASE_URL, cursor_factory=dashboard.psycopg2.extras.RealDictCursor, connect_timeout=10

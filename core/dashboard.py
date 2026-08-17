@@ -218,10 +218,28 @@ def _is_company_artifact(name: str | None) -> bool:
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request):
+def dashboard(
+    request: Request,
+    date_from: str | None = Query(default=None, alias="from"),
+    date_to: str | None = Query(default=None, alias="to"),
+):
+    """Merged page (2026-08-17): application stats (the former /tracker — weekly
+    series, funnel, applied-today drill-down) on top, scraper analytics below."""
     _authenticate(request)
+    date_from, date_to = _parse_date_range(date_from, date_to)
 
-    # --- data queries ---
+    # --- application stats (former /tracker) ---
+    series = db.get_tracker_series(date_from, date_to)
+    app_funnel = db.get_funnel_stats()
+    applied_today_count = len(db.get_applied_today())
+    from datetime import date as _date, timedelta as _timedelta
+    today = _date.today()
+    presets = {
+        "7 weeks": str(today - _timedelta(weeks=7)),
+        "Quarter": str(today - _timedelta(days=90)),
+    }
+
+    # --- scraper analytics queries ---
     totals = _query("""
         SELECT COUNT(*) as runs,
                COALESCE(SUM(qualified),0) as qualified,
@@ -287,6 +305,18 @@ def dashboard(request: Request):
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "active": "dashboard",
+        "date_from": date_from,
+        "date_to": date_to,
+        "presets": presets,
+        "series": series,
+        "funnel": app_funnel,
+        "funnel_order": FUNNEL_ORDER,
+        "status_labels": STATUS_LABELS,
+        "applied_today_count": applied_today_count,
+        "weeks_json": _json_js(series["weeks"]),
+        "found_json": _json_js(series["found"]),
+        "applied_json": _json_js(series["applied"]),
+        "replies_json": _json_js(series["replies"]),
         "totals": totals,
         "recent_runs": recent_runs,
         "top_companies": top_companies,
@@ -427,7 +457,31 @@ def job_detail(request: Request, job_id: int):
             next_status = FUNNEL_ORDER[idx + 1]
     return templates.TemplateResponse(request, "partials/job_detail_modal.html", {
         "job": job, "next_status": next_status, "status_labels": STATUS_LABELS,
+        "job_id": job_id, "comments": db.get_comments(job_id),
         **_resume_slot_context(job),
+    })
+
+
+@app.post("/jobs/{job_id}/comments", response_class=HTMLResponse)
+def add_comment(request: Request, job_id: int, body: str = Form(...)):
+    _authenticate(request)
+    if not db.get_job(job_id):
+        raise HTTPException(status_code=404, detail="Unknown job id")
+    body = body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Empty note")
+    db.add_comment(job_id, body[:2000])
+    return templates.TemplateResponse(request, "partials/comments_block.html", {
+        "job_id": job_id, "comments": db.get_comments(job_id),
+    })
+
+
+@app.delete("/jobs/{job_id}/comments/{comment_id}", response_class=HTMLResponse)
+def delete_comment(request: Request, job_id: int, comment_id: int):
+    _authenticate(request)
+    db.delete_comment(job_id, comment_id)
+    return templates.TemplateResponse(request, "partials/comments_block.html", {
+        "job_id": job_id, "comments": db.get_comments(job_id),
     })
 
 
@@ -755,38 +809,29 @@ def _parse_date_range(date_from: str | None, date_to: str | None) -> tuple[str |
     return date_from, date_to
 
 
-@app.get("/tracker", response_class=HTMLResponse)
+@app.get("/tracker")
 def tracker(
     request: Request,
     date_from: str | None = Query(default=None, alias="from"),
     date_to: str | None = Query(default=None, alias="to"),
 ):
-    """Design Turn 6 — replaces the manual Notion tracker. Weekly Found/Applied/Replies
-    series (period-scoped) plus the Turn 9a funnel efficiency section (all-time)."""
+    """Merged into /dashboard (2026-08-17) — permanent redirect keeps old bookmarks
+    working, preserving the period filter."""
+    params = []
+    if date_from:
+        params.append(f"from={date_from}")
+    if date_to:
+        params.append(f"to={date_to}")
+    return RedirectResponse(url="/dashboard" + ("?" + "&".join(params) if params else ""), status_code=301)
+
+
+@app.get("/applied-today", response_class=HTMLResponse)
+def applied_today(request: Request):
+    """Table behind the dashboard's Applied-today stat — today's applications with
+    posting links and kanban-card deep links."""
     _authenticate(request)
-    date_from, date_to = _parse_date_range(date_from, date_to)
-    series = db.get_tracker_series(date_from, date_to)
-    funnel = db.get_funnel_stats()
-
-    from datetime import date as _date, timedelta as _timedelta
-    today = _date.today()
-    presets = {
-        "7 weeks": str(today - _timedelta(weeks=7)),
-        "Quarter": str(today - _timedelta(days=90)),
-    }
-
-    return templates.TemplateResponse(request, "tracker.html", {
-        "active": "tracker",
-        "date_from": date_from,
-        "date_to": date_to,
-        "presets": presets,
-        "series": series,
-        "funnel": funnel,
-        "status_labels": STATUS_LABELS,
-        "weeks_json": _json_js(series["weeks"]),
-        "found_json": _json_js(series["found"]),
-        "applied_json": _json_js(series["applied"]),
-        "replies_json": _json_js(series["replies"]),
+    return templates.TemplateResponse(request, "partials/applied_today_modal.html", {
+        "jobs": db.get_applied_today(),
     })
 
 

@@ -1,0 +1,40 @@
+{# Drill-down behind the dashboard's "Applied today" stat (2026-08-17): the
+   vacancies applied to today, each openable as posting or kanban card. #}
+<div class="dialog-backdrop" id="applied-today-dialog" style="z-index:55" onclick="if(event.target===this) this.remove()">
+  <div class="dialog" style="width:640px;max-width:92%">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <div class="dialog-title" style="margin:0">Applied today</div>
+      <span style="font-size:12px;color:var(--color-neutral-600);font-feature-settings:'tnum'">{{ jobs|length }} application{{ 's' if jobs|length != 1 }}</span>
+      <span style="flex:1"></span>
+      <button type="button" class="btn btn-icon btn-ghost" aria-label="Close" onclick="document.getElementById('applied-today-dialog').remove()">✕</button>
+    </div>
+    {% if jobs %}
+    <table style="width:100%;border-collapse:collapse;font-size:13px;font-feature-settings:'tnum';margin-top:10px">
+      <thead><tr>
+        <th style="text-align:left;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:6px 0;border-bottom:1px solid var(--color-text)">Vacancy</th>
+        <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:6px 0;border-bottom:1px solid var(--color-text)">ATS</th>
+        <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:6px 0;border-bottom:1px solid var(--color-text)">Time</th>
+        <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:6px 0;border-bottom:1px solid var(--color-text)"></th>
+      </tr></thead>
+      <tbody>
+        {% for j in jobs %}
+        <tr>
+          <td style="padding:7px 8px 7px 0;border-bottom:1px solid var(--color-divider)">
+            <a href="/kanban?job={{ j.id }}" style="color:inherit">{{ j.title }}</a>
+            <div style="font-size:11.5px;color:var(--color-neutral-600)">{{ j.company or '—' }}{% if j.source %} · {{ j.source }}{% endif %}</div>
+          </td>
+          <td style="padding:7px 0;border-bottom:1px solid var(--color-divider);text-align:right;color:var(--color-accent-700);font-weight:600">{{ j.ats_score if j.ats_score is not none else '—' }}</td>
+          <td style="padding:7px 0 7px 10px;border-bottom:1px solid var(--color-divider);text-align:right;white-space:nowrap">{{ j.applied_at.strftime('%H:%M') }}</td>
+          <td style="padding:7px 0 7px 10px;border-bottom:1px solid var(--color-divider);text-align:right;white-space:nowrap">
+            {% set posting_url = (j.apply_url or j.url)|safe_url %}
+            {% if posting_url %}<a class="btn btn-ghost" style="font-size:11.5px;padding:2px 8px" href="{{ posting_url }}" target="_blank" rel="noopener noreferrer">Open ↗</a>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="font-style:italic;color:var(--color-neutral-600);font-size:13px;margin-top:10px">No applications yet today.</p>
+    {% endif %}
+  </div>
+</div>

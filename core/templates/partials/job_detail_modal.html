@@ -2,7 +2,7 @@
   <div class="dialog" style="width:660px;max-width:92%">
     <div style="display:flex;align-items:flex-start;gap:14px">
       <div style="flex:1;min-width:0">
-        <div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:4px">{{ job.company or '—' }}{% if job.source %} · via {{ job.source }}{% endif %}</div>
+        <div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:4px">{{ job.company or '—' }}{% if job.source %} · via {{ job.source }}{% endif %} · <span style="cursor:pointer;text-decoration:underline dotted" title="Copy card link" onclick="navigator.clipboard.writeText(location.origin + '/kanban?job={{ job.id }}');window.showToast && window.showToast('Card link copied — #{{ job.id }}')">#{{ job.id }}</span></div>
         <div style="font-family:var(--font-heading);font-weight:600;font-size:24px;line-height:1.2">{{ job.title }}</div>
       </div>
       <div style="text-align:center;flex:none"><div style="font-family:var(--font-heading);font-size:38px;line-height:1;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ job.ats_score if job.ats_score is not none else '—' }}</div><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600)">ATS</div></div>
@@ -55,6 +55,8 @@
     {% else %}
     <p style="font-style:italic;color:var(--color-neutral-600);font-size:13px">No breakdown or keywords recorded for this vacancy.</p>
     {% endif %}
+
+    {% include 'partials/comments_block.html' %}
 
     <div class="dialog-actions" style="margin-top:6px">
       {% set posting_url = (job.apply_url or job.url)|safe_url %}

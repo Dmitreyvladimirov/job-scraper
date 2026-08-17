@@ -1,0 +1,21 @@
+{# Notes on a card (2026-08-17) — lives at the bottom of the peek modal. The whole
+   block swaps (outerHTML) on add/delete so the list and the cleared form re-render
+   together. #}
+<div id="comments-{{ job_id }}" style="border-top:1px solid var(--color-divider);margin-top:12px;padding-top:10px">
+  <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);margin-bottom:6px">Notes{% if comments %} · {{ comments|length }}{% endif %}</div>
+  {% for c in comments %}
+  <div style="display:flex;gap:8px;align-items:baseline;margin-bottom:5px;font-size:13px">
+    <span style="flex:1;white-space:pre-wrap">{{ c.body }}</span>
+    <span style="font-size:11px;color:var(--color-neutral-600);white-space:nowrap;font-feature-settings:'tnum'">{{ c.created_at|short_date }}</span>
+    <span style="cursor:pointer;color:var(--color-neutral-500)" title="Delete note"
+          hx-delete="/jobs/{{ job_id }}/comments/{{ c.id }}"
+          hx-target="#comments-{{ job_id }}" hx-swap="outerHTML">×</span>
+  </div>
+  {% endfor %}
+  <form hx-post="/jobs/{{ job_id }}/comments" hx-target="#comments-{{ job_id }}" hx-swap="outerHTML"
+        style="display:flex;gap:8px;margin-top:8px">
+    <input class="input" type="text" name="body" placeholder="Add a note… (recruiter name, salary quote, impression)"
+           autocomplete="off" style="flex:1;font-size:13px" required>
+    <button type="submit" class="btn btn-secondary" style="font-size:12.5px">Add</button>
+  </form>
+</div>

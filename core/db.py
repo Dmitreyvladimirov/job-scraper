@@ -145,6 +145,18 @@ def init_db() -> None:
                         updated_at TIMESTAMP DEFAULT NOW()
                     )
                 """)
+
+                # Free-form notes on a vacancy card (2026-08-17) — recruiter names,
+                # interview impressions, salary quotes. Plain text, newest first.
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS job_comments (
+                        id         SERIAL PRIMARY KEY,
+                        job_id     INTEGER NOT NULL REFERENCES jobs(id),
+                        body       TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_job_comments_job_id ON job_comments(job_id)")
     finally:
         conn.close()
     logger.info("DB: initialised (Postgres)")
@@ -412,6 +424,67 @@ def get_resume_pdf(resume_run_id: int) -> tuple[bytes, str | None] | None:
             if not row:
                 return None
             return bytes(row["pdf_bytes"]), row["company"]
+    finally:
+        conn.close()
+
+
+def get_comments(job_id: int) -> list[dict]:
+    """Newest first — the modal shows the latest note on top."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, body, created_at FROM job_comments WHERE job_id = %s ORDER BY id DESC",
+                (job_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def add_comment(job_id: int, body: str) -> int:
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO job_comments (job_id, body) VALUES (%s, %s) RETURNING id",
+                    (job_id, body),
+                )
+                return cur.fetchone()["id"]
+    finally:
+        conn.close()
+
+
+def delete_comment(job_id: int, comment_id: int) -> bool:
+    """job_id in the WHERE guards against a stale/forged id deleting another card's
+    note. Returns False when nothing matched (already deleted — treated as fine)."""
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM job_comments WHERE id = %s AND job_id = %s",
+                    (comment_id, job_id),
+                )
+                return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def get_applied_today() -> list[dict]:
+    """Vacancies applied to today (server-local date of applied_at) — the drill-down
+    behind the Applied stat on the merged dashboard."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, title, company, source, ats_score, url, apply_url, applied_at
+                   FROM jobs
+                   WHERE applied_at IS NOT NULL AND applied_at::date = CURRENT_DATE
+                   ORDER BY applied_at DESC""",
+            )
+            return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
 

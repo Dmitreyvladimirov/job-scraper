@@ -100,7 +100,7 @@
   {% if not loop.last and funnel.stages[loop.index].conversion_pct is not none %}<span style="color:var(--color-accent-700);padding-right:14px">→ {{ funnel.stages[loop.index].conversion_pct }}%</span>{% endif %}
   {% endfor %}
   <span style="flex:1"></span>
-  <a href="/tracker" style="font-size:12px">Tracker →</a>
+  <a href="/dashboard" style="font-size:12px">Dashboard →</a>
 </div>
 {% endif %}
 
@@ -332,6 +332,12 @@
   function openDetail(jobId) {
     htmx.ajax('GET', '/jobs/' + jobId + '/detail', {target: '#detail-modal-slot', swap: 'innerHTML'});
   }
+  // Deep link: /kanban?job=<id> opens that card's modal on load (the URL the
+  // modal's copy-link control produces), so a card can be shared/referenced by id.
+  (function () {
+    var deepLinkJob = new URLSearchParams(location.search).get('job');
+    if (deepLinkJob && /^\d+$/.test(deepLinkJob)) openDetail(deepLinkJob);
+  })();
   function cardClick(e, jobId) {
     if (selectionMode) { toggleSelect(jobId); return; }
     openDetail(jobId);
