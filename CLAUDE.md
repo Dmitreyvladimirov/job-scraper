@@ -11,51 +11,37 @@ Project notes for Claude Code sessions.
 
 ## Current repo state
 
-- Active project: JobScraper
-- Main focus: job sourcing, Telegram parsing, Notion writes, dashboard/reporting
-- Source of truth for task state: `CONTEXT.md`
-- Source of truth for scope: `requirements.md`, `design.md`, `tasks.md`
-- Source of truth for roadmap and tradeoffs: `ROADMAP.md`
-- The repo currently contains restored working docs plus a few active code deltas.
+- Active project: JobScraper + resumebuilder-cloud (merged 2026-08-14: shared
+  Postgres, cloud scoring in shadow mode, unified plan)
+- Source of truth for the plan and roadmap: `PROJECT.md` (consolidated
+  2026-08-17 from ROADMAP/BACKLOG/tasks/requirements — those live in `archive/`)
+- Source of truth for session state: `CONTEXT.md` (Resume block = active track)
+- Scraper tech spec: `SPEC.md` (reference); dashboard spec:
+  `Design/frontend-spec/SPEC_FRONTEND.md` (reference, mostly implemented)
+- Source audit: `SOURCES_DECISION.md` (reference; template for new sources)
+- Cloud services: `/Users/DimaKu/Documents/Coding/resumebuilder-cloud`
+  (scoring/cards/resume; specs in its `docs/`)
 
 ## Current workstreams
 
-1. Source quality and parsing
-   - Keep Telegram parsing improvements in `sources/telegram_channels.py`.
-   - Keep `jobgether` as a candidate source if it proves useful.
-   - Continue with source-specific fixes before broad redesigns.
-
-2. ResumeBuilder / frontend direction
-   - The repo has a documented plan for `db_manual.py`, `sync_notion.py`, and
-     a status history model in Postgres.
-   - The larger frontend question is still split between JobScraper and the
-     WorkSearch umbrella context.
-   - `dashboard.py` is already the seed of the custom frontend discussion.
-
-3. Dashboard / analytics
-   - The dashboard is the read-side analytics layer.
-   - The long-term plan is to extend it carefully rather than inventing a
-     second UI stack if the existing one can absorb the workflow.
+See `PROJECT.md` → "Активный трек". Short version:
+1. Scoring cutover (`USE_CLOUD_SCORING=1`, `ATS_THRESHOLD` 60→70) — pending
+   Dimitry's go after the Saturday shadow report.
+2. Release 1 resume features (Generate-resume button, auto-score on Add-job,
+   Re-score in duplicate dialog) — pending Dimitry's go.
+3. Release 2 auto-generation (score ≥80 gates) — after cutover.
+4. Phase 4 input-data fixes, Phase 5 cleanup (~2026-08-28).
 
 ## Working rules
 
-- Read `CONTEXT.md` first for the live task.
-- Prefer `requirements.md`, `design.md`, and `tasks.md` over memory.
-- Do not delete or rewrite user-authored project docs without explicit approval.
+- Read `CONTEXT.md` first for the live task; `PROJECT.md` for the roadmap.
+- Do not delete or rewrite user-authored project docs without explicit approval
+  (standing rule in `CONTEXT.md` — docs were wrongly deleted once on 2026-07-07).
 - Keep changes scoped to the task at hand.
-- If a change would touch data model or workflow contracts, verify against
-  `design.md` before editing code.
-
-## Relevant open threads
-
-- `TASK-001`: add `_company_match()` to Lever and Ashby branches in
-  `utils.py::find_apply_url()`.
-- `TASK-003`: pass `DATABASE_URL` in GitHub Actions workflow dispatch.
-- `TASK-004`..`TASK-006`: Telegram parsing fixes for known channel formats.
-- `TASK-012`..`TASK-015`: ResumeBuilder / Postgres status history and
-  reapplication guard.
-- `TASK-019`: per-channel Telegram counters in the dashboard.
-- `TASK-022`: resolve the WorkSearch / JobPostBot / frontend boundary.
+- If a change touches data model or workflow contracts, verify against
+  `Design/design.md` / `SPEC_FRONTEND.md` before editing code.
+- Scraper is live (cron 4×/день пн-пт) — never break the run path; feature
+  flags + shadow patterns are the established rollout style.
 
 ## Notes
 

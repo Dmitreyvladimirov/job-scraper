@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/classical-10239a4e-138c-4e2e-b164-ed85c94c7633/styles.css">
+<script src="_ds/classical-10239a4e-138c-4e2e-b164-ed85c94c7633/_ds_bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+body{margin:0;background:var(--color-bg)}
+a{color:var(--color-accent-700)} a:hover{color:var(--color-accent-600)}
+.theme-dark{--color-bg:#1b1918;--color-surface:#232020;--color-text:#e8e4dd;--color-divider:rgba(232,228,221,.14);
+--color-neutral-400:rgba(232,228,221,.3);--color-neutral-500:rgba(232,228,221,.42);--color-neutral-600:rgba(232,228,221,.55);--color-neutral-700:rgba(232,228,221,.72);
+--color-accent:#cf9c4f;--color-accent-700:#d9ad66;--color-accent-500:#cf9c4f;
+background:var(--color-bg);color:var(--color-text)}
+.theme-dark a{color:var(--color-accent-700)} .theme-dark a:hover{color:var(--color-accent)}
+</style>
+</helmet>
+<div class="{{ rootClass }}" style="min-height:100vh;background:var(--color-bg);color:var(--color-text);transition:background .25s">
+  <div style="display:flex;align-items:center;gap:27px;padding:14px 36px;border-bottom:1px solid var(--color-divider)">
+    <div style="font-family:var(--font-heading);font-weight:600;font-size:19px;margin-right:auto">JobScraper</div>
+    <a href="Review UI Explorations.dc.html#1a" style="color:inherit;text-decoration:none;font-size:14px">Review</a>
+    <a href="Review UI Explorations.dc.html#1f" style="color:inherit;text-decoration:none;font-size:14px">Kanban</a>
+    <a href="Review UI Explorations.dc.html#2b" style="color:inherit;text-decoration:none;font-size:14px">Sources</a>
+    <a href="#" style="color:var(--color-accent);text-decoration:none;font-size:14px;border-bottom:1px solid var(--color-accent);padding-bottom:2px">Dashboard</a>
+    <button onClick="{{ toggleTheme }}" aria-label="Toggle theme" style="display:inline-flex;align-items:center;border:1px solid var(--color-divider);border-radius:999px;padding:3px;background:transparent;cursor:pointer;color:inherit" style-hover="border-color: var(--color-accent)">
+      <span style="{{ sunStyle }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg></span>
+      <span style="{{ moonStyle }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></span>
+    </button>
+  </div>
+  <div style="padding:30px 36px 44px;max-width:1280px;margin:0 auto">
+    <h1 style="font-size:34px;margin:0 0 24px">Dashboard</h1>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--color-divider);border-bottom:1px solid var(--color-divider);margin-bottom:36px">
+      <div style="padding:20px 24px 20px 0;border-right:1px solid var(--color-divider)"><div style="font-family:var(--font-heading);font-size:44px;line-height:1;font-feature-settings:'tnum'">147</div><div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:8px">Total runs</div></div>
+      <div style="padding:20px 24px;border-right:1px solid var(--color-divider)"><div style="font-family:var(--font-heading);font-size:44px;line-height:1;font-feature-settings:'tnum';color:var(--color-accent-700)">715</div><div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:8px">Qualified jobs</div></div>
+      <div style="padding:20px 24px;border-right:1px solid var(--color-divider)"><div style="font-family:var(--font-heading);font-size:44px;line-height:1;font-feature-settings:'tnum'">55 499</div><div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:8px">Total fetched</div></div>
+      <div style="padding:20px 0 20px 24px"><div style="font-family:var(--font-heading);font-size:44px;line-height:1;font-feature-settings:'tnum'">723</div><div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:8px">GPT calls used</div></div>
+    </div>
+    <div style="margin-bottom:36px">
+      <h6 style="margin:0 0 14px;color:var(--color-accent)">Qualified jobs per day</h6>
+      <canvas id="dailyChart" height="230" style="width:100%;max-height:230px"></canvas>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-bottom:36px;border-top:1px solid var(--color-divider);padding-top:26px">
+      <div><h6 style="margin:0 0 14px;color:var(--color-accent)">Filter funnel — total</h6><canvas id="funnelChart" height="210" style="width:100%;max-height:210px"></canvas></div>
+      <div style="border-left:1px solid var(--color-divider);padding-left:40px"><h6 style="margin:0 0 14px;color:var(--color-accent)">ATS score distribution</h6><canvas id="scoreChart" height="210" style="width:100%;max-height:210px"></canvas></div>
+    </div>
+    <div style="margin-bottom:36px;border-top:1px solid var(--color-divider);padding-top:26px">
+      <h6 style="margin:0 0 14px;color:var(--color-accent)">Source performance</h6>
+      <canvas id="sourceChart" height="220" style="width:100%;max-height:220px"></canvas>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;border-top:1px solid var(--color-divider);padding-top:26px;margin-bottom:36px">
+      <div>
+        <h6 style="margin:0 0 8px;color:var(--color-accent)">Top companies found</h6>
+        <table style="width:100%;border-collapse:collapse;font-size:13.5px;font-feature-settings:'tnum'">
+          <thead><tr>
+            <th style="text-align:left;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Company</th>
+            <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Times found</th>
+            <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Top ATS</th>
+          </tr></thead>
+          <tbody>
+            <sc-for list="{{ topCompanies }}" as="c" hint-placeholder-count="8">
+              <tr><td style="padding:8px 0;border-bottom:1px solid var(--color-divider);font-style:{{ c.fs }};color:{{ c.col }}">{{ c.name }}</td><td style="padding:8px 0;border-bottom:1px solid var(--color-divider);text-align:right;color:var(--color-accent-700);font-weight:600">{{ c.cnt }}</td><td style="padding:8px 0;border-bottom:1px solid var(--color-divider);text-align:right">{{ c.top }}</td></tr>
+            </sc-for>
+          </tbody>
+        </table>
+        <div style="font-size:11.5px;color:var(--color-neutral-600);margin-top:8px;font-style:italic">Rows in italic are parsing artifacts from LinkedIn postings — company name not extracted.</div>
+      </div>
+      <div style="border-left:1px solid var(--color-divider);padding-left:40px">
+        <h6 style="margin:0 0 8px;color:var(--color-accent)">Recent runs</h6>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;font-feature-settings:'tnum'">
+          <thead><tr>
+            <th style="text-align:left;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Time (UTC)</th>
+            <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Fetched</th>
+            <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">Qualified</th>
+            <th style="text-align:right;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 0;border-bottom:1px solid var(--color-text)">GPT</th>
+          </tr></thead>
+          <tbody>
+            <sc-for list="{{ recentRuns }}" as="r" hint-placeholder-count="8">
+              <tr><td style="padding:8px 0;border-bottom:1px solid var(--color-divider)">{{ r.time }}</td><td style="padding:8px 0;border-bottom:1px solid var(--color-divider);text-align:right">{{ r.fetched }}</td><td style="padding:8px 0;border-bottom:1px solid var(--color-divider);text-align:right;color:var(--color-accent-700);font-weight:600">{{ r.qualified }}</td><td style="padding:8px 0;border-bottom:1px solid var(--color-divider);text-align:right">{{ r.gpt }}</td></tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--color-neutral-600);border-top:1px solid var(--color-divider);padding-top:14px">Theme preference is saved on this device. Charts recolor with the theme.</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;defaultDark&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+class Component extends DCLogic {
+  state = { dark: (typeof localStorage !== 'undefined' && localStorage.getItem('js_theme') === 'dark') };
+  renderVals() {
+    const iconOn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px', borderRadius: '50%', border: '1px solid var(--color-accent)', color: 'var(--color-accent)' };
+    const iconOff = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px', borderRadius: '50%', color: 'var(--color-neutral-500)' };
+    return {
+      rootClass: this.state.dark ? 'theme-dark' : '',
+      sunStyle: this.state.dark ? iconOff : iconOn,
+      moonStyle: this.state.dark ? iconOn : iconOff,
+      toggleTheme: () => {
+        const dark = !this.state.dark;
+        try { localStorage.setItem('js_theme', dark ? 'dark' : 'light'); } catch (e) {}
+        this.setState({ dark }, () => setTimeout(() => this._build(), 50));
+      },
+      topCompanies: [
+        { name: '(no company parsed)', cnt: 97, top: 95, fs: 'italic', col: 'var(--color-neutral-600)' },
+        { name: 'LinkedIn By clicking Continue to join or', cnt: 16, top: 95, fs: 'italic', col: 'var(--color-neutral-600)' },
+        { name: 'respects your privacy LinkedIn and 3rd pa', cnt: 11, top: 94, fs: 'italic', col: 'var(--color-neutral-600)' },
+        { name: 'Binance', cnt: 10, top: 95, fs: 'normal', col: 'inherit' },
+        { name: 'Remote', cnt: 7, top: 91, fs: 'normal', col: 'inherit' },
+        { name: 'PadSplit', cnt: 7, top: 88, fs: 'normal', col: 'inherit' },
+        { name: 'Circle', cnt: 6, top: 82, fs: 'normal', col: 'inherit' },
+        { name: 'Distru', cnt: 5, top: 97, fs: 'normal', col: 'inherit' },
+        { name: 'Instacart', cnt: 4, top: 95, fs: 'normal', col: 'inherit' },
+        { name: 'Reddit', cnt: 4, top: 95, fs: 'normal', col: 'inherit' },
+      ],
+      recentRuns: [
+        { time: '2026-08-04 06:07', fetched: 612, qualified: 25, gpt: 31 },
+        { time: '2026-08-03 15:07', fetched: 548, qualified: 10, gpt: 14 },
+        { time: '2026-08-02 12:07', fetched: 731, qualified: 32, gpt: 40 },
+        { time: '2026-07-31 09:07', fetched: 802, qualified: 26, gpt: 33 },
+        { time: '2026-07-30 06:07', fetched: 655, qualified: 25, gpt: 30 },
+        { time: '2026-07-29 15:07', fetched: 619, qualified: 41, gpt: 47 },
+        { time: '2026-07-28 12:07', fetched: 688, qualified: 44, gpt: 52 },
+        { time: '2026-07-27 09:07', fetched: 590, qualified: 40, gpt: 46 },
+      ],
+    };
+  }
+  componentDidMount() { this._init(); }
+  _init() {
+    if (!window.Chart || !document.getElementById('dailyChart')) { setTimeout(() => this._init(), 120); return; }
+    this._build();
+  }
+  _build() {
+    if (!window.Chart) return;
+    (this._charts || []).forEach(c => c.destroy());
+    this._charts = [];
+    const root = document.querySelector('.theme-dark') || document.body;
+    const cs = getComputedStyle(root);
+    const v = n => cs.getPropertyValue(n).trim();
+    const dark = this.state.dark;
+    const accent = dark ? '#cf9c4f' : (v('--color-accent') || '#b68235');
+    const ink = dark ? 'rgba(232,228,221,.6)' : (v('--color-neutral-600') || '#777');
+    const grid = dark ? 'rgba(232,228,221,.09)' : 'rgba(32,31,29,.08)';
+    const dim = dark ? 'rgba(232,228,221,.22)' : 'rgba(32,31,29,.18)';
+    Chart.defaults.font.family = 'Lora, serif';
+    Chart.defaults.font.size = 11;
+    const C = (id, cfg) => { const el = document.getElementById(id); if (el) this._charts.push(new Chart(el, cfg)); };
+    const days = ['06-18','06-22','06-25','06-29','07-02','07-06','07-08','07-10','07-14','07-16','07-20','07-22','07-24','07-28','07-30','08-02','08-04'];
+    const fetched = [1480,820,880,1470,1200,1170,3200,3360,1450,2050,1700,1500,1350,1500,1700,900,850];
+    const qualified = [4,2,0,27,1,2,18,3,88,39,25,39,29,44,26,32,25];
+    const legend = { labels: { color: ink, boxWidth: 12, boxHeight: 12 } };
+    const ax = t => ({ grid: { color: grid }, ticks: { color: ink }, title: t ? { display: true, text: t, color: ink } : undefined });
+    C('dailyChart', { type: 'bar', data: { labels: days, datasets: [
+      { label: 'Fetched', data: fetched, backgroundColor: dim, yAxisID: 'y2' },
+      { label: 'Qualified', data: qualified, backgroundColor: accent, yAxisID: 'y' }] },
+      options: { responsive: true, maintainAspectRatio: false, scales: { y: { ...ax('Qualified'), position: 'left' }, y2: { ...ax('Fetched'), position: 'right', grid: { drawOnChartArea: false } }, x: ax() }, plugins: { legend } } });
+    C('funnelChart', { type: 'bar', data: { labels: ['Qualified','Low score','Wrong role','Location','Stale','Dedup','GPT limit'],
+      datasets: [{ data: [715,120,44300,3400,4100,3300,180], backgroundColor: ['#0000'], borderColor: accent, borderWidth: 1.5 }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: ax(), y: { grid: { display: false }, ticks: { color: ink } } } } });
+    C('scoreChart', { type: 'bar', data: { labels: ['90-100','80-89','70-79','60-69','<60'], datasets: [{ data: [180,410,72,33,20], backgroundColor: '#0000', borderColor: accent, borderWidth: 1.5 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { color: ink } }, y: ax() } } });
+    C('sourceChart', { type: 'bar', data: { labels: ['himalayas','remotive','jobgether','arbeitnow','telegram','remoteok','jobicy','wwr'],
+      datasets: [
+        { label: 'Total fetched', data: [13100,9900,8100,7300,8800,5300,4100,2600], backgroundColor: dim },
+        { label: 'Qualified', data: [212,148,96,64,88,46,38,23], backgroundColor: accent }] },
+      options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: { color: ink } }, y: ax() }, plugins: { legend } } });
+  }
+}
+</script>
+</body>
+</html>
