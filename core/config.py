@@ -49,7 +49,9 @@ def validate_secrets() -> None:
     if missing:
         raise EnvironmentError(f"Missing required env vars: {', '.join(missing)}")
 
-ATS_THRESHOLD = 60
+# 70 is calibrated to the cloud scorer's scale (cutover 2026-08-17): on Dimitry's
+# hand-labeled set it matches his verdicts 80% at 70 vs 44% for the local scorer at 60.
+ATS_THRESHOLD = 70
 COMPANY_COOLDOWN_DAYS = 90  # warn if applied to same company within this period
 MAX_GPT_CALLS_PER_RUN = 40  # cap LLM calls per run to control costs
 MAX_JOB_AGE_DAYS = 14       # skip vacancies older than this; 0 = disabled
