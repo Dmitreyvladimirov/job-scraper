@@ -56,7 +56,28 @@ def init_db() -> None:
                         domain      TEXT,
                         why_not     TEXT,
                         outcome     TEXT,
+                        notion_id   TEXT UNIQUE,
+                        current_status TEXT,
+                        rejection_reason TEXT,
+                        source_type TEXT DEFAULT 'scraper',
+                        deleted_at  TIMESTAMP,
                         logged_at   TIMESTAMP DEFAULT NOW()
+                    )
+                """)
+                cur.execute("ALTER TABLE jobs ALTER COLUMN run_id DROP NOT NULL")
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notion_id TEXT UNIQUE")
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS current_status TEXT")
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS rejection_reason TEXT")
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'scraper'")
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS status_log (
+                        id          SERIAL PRIMARY KEY,
+                        job_id      INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                        old_status  TEXT,
+                        new_status  TEXT NOT NULL,
+                        changed_at  TIMESTAMP DEFAULT NOW(),
+                        source      TEXT
                     )
                 """)
                 cur.execute("""
@@ -75,6 +96,10 @@ def init_db() -> None:
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_run_id ON jobs(run_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_outcome ON jobs(outcome)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_current_status ON jobs(current_status)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_rejection_reason ON jobs(rejection_reason)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_status_log_job_id ON status_log(job_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_status_log_new_status ON status_log(new_status)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_url ON jobs(url)")
     finally:
@@ -145,6 +170,8 @@ def log_job(
     why_not: str | None = None,
 ) -> None:
     desc = (job.get("description") or "")[:8000]
+    current_status = "qualified" if outcome == "qualified" else "rejected" if outcome == "low_score" else None
+    rejection_reason = "low_score" if outcome == "low_score" else None
     conn = _conn()
     try:
         with conn:
@@ -152,8 +179,9 @@ def log_job(
                 cur.execute(
                     """INSERT INTO jobs
                        (run_id, url, apply_url, title, company, source, published,
-                        description, ats_score, domain, why_not, outcome)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        description, ats_score, domain, why_not, outcome,
+                        current_status, rejection_reason)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         run_id,
                         job.get("url"),
@@ -167,6 +195,8 @@ def log_job(
                         domain,
                         why_not,
                         outcome,
+                        current_status,
+                        rejection_reason,
                     ),
                 )
     finally:

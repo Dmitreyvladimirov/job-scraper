@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="same-origin">
+  <title>Kanban — JobScraper</title>
+  <link rel="stylesheet" href="tracker.css">
+  <style>
+    .board-wrap { max-width: 1440px; margin: 0 auto; overflow-x: auto; padding-bottom: 12px; }
+    .board { display: grid; grid-template-columns: repeat(7, minmax(280px, 1fr)); gap: 12px; min-width: 2032px; }
+    .column {
+      min-height: 540px; padding: 12px; border: 1px solid var(--border);
+      border-radius: 12px; background: #151821;
+    }
+    .column.over { border-color: var(--blue); background: #60a5fa0a; }
+    .column-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px; padding: 0 2px;
+    }
+    .column-title { font-size: 12px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+    .column-count { color: var(--muted); font-size: 12px; }
+    .cards { min-height: 470px; display: grid; align-content: start; gap: 9px; }
+    .job-card {
+      padding: 13px; border: 1px solid var(--border); border-radius: 9px;
+      background: var(--surface); cursor: grab;
+    }
+    .job-card:hover { border-color: #3b4050; background: var(--raised); }
+    .job-card.dragging { opacity: .55; cursor: grabbing; }
+    .job-title { margin: 7px 0 3px; font-size: 14px; font-weight: 700; line-height: 1.3; }
+    .job-company { color: var(--muted); font-size: 13px; }
+    .job-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+    .mini-score { color: var(--green); font-size: 12px; font-weight: 750; }
+    .age { color: #64748b; font-size: 11px; }
+    .empty-drop {
+      display: none; padding: 26px 8px; border: 1px dashed var(--border);
+      border-radius: 8px; color: #64748b; text-align: center; font-size: 12px;
+    }
+    .cards:empty + .empty-drop { display: block; }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">JobScraper</div>
+    <nav class="nav" aria-label="Primary">
+      <a href="#">Dashboard</a>
+      <a href="review-queue.html">Review <span class="badge">3</span></a>
+      <a class="active" href="kanban.html">Kanban</a>
+    </nav>
+  </header>
+
+  <section class="page-head">
+    <div>
+      <h1>Application tracker</h1>
+      <div class="subtitle">Drag a card to update its status</div>
+    </div>
+    <div class="meta">8 active applications</div>
+  </section>
+
+  <main class="board-wrap">
+    <div class="board" id="board">
+      <section class="column" data-status="new">
+        <header class="column-head"><span class="column-title">New</span><span class="column-count">1</span></header>
+        <div class="cards">
+          <article class="job-card" draggable="true" tabindex="0">
+            <div class="eyebrow">RemoteOK</div><div class="job-title">Product Operations Manager</div>
+            <div class="job-company">Automattic</div>
+            <div class="job-foot"><span class="mini-score">ATS 81</span><span class="age">1d</span></div>
+          </article>
+        </div><div class="empty-drop">Drop jobs here</div>
+      </section>
+      <section class="column" data-status="applied">
+        <header class="column-head"><span class="column-title">Applied</span><span class="column-count">2</span></header>
+        <div class="cards">
+          <article class="job-card" draggable="true" tabindex="0">
+            <div class="eyebrow">Himalayas</div><div class="job-title">Senior Product Manager</div>
+            <div class="job-company">Linear</div>
+            <div class="job-foot"><span class="mini-score">ATS 92</span><span class="age">2h</span></div>
+          </article>
+          <article class="job-card" draggable="true" tabindex="0">
+            <div class="eyebrow">WWR</div><div class="job-title">Platform Product Lead</div>
+            <div class="job-company">PostHog</div>
+            <div class="job-foot"><span class="mini-score">ATS 87</span><span class="age">5h</span></div>
+          </article>
+        </div><div class="empty-drop">Drop jobs here</div>
+      </section>
+      <section class="column" data-status="recruiter_reply">
+        <header class="column-head"><span class="column-title">Recruiter reply</span><span class="column-count">1</span></header>
+        <div class="cards">
+          <article class="job-card" draggable="true" tabindex="0">
+            <div class="eyebrow">Company site</div><div class="job-title">Principal Product Manager</div>
+            <div class="job-company">Miro</div>
+            <div class="job-foot"><span class="mini-score">ATS 89</span><span class="age">2d</span></div>
+          </article>
+        </div><div class="empty-drop">Drop jobs here</div>
+      </section>
+      <section class="column" data-status="screen">
+        <header class="column-head"><span class="column-title">Screen</span><span class="column-count">1</span></header>
+        <div class="cards">
+          <article class="job-card" draggable="true" tabindex="0">
+            <div class="eyebrow">Lever</div><div class="job-title">Senior PM, Growth</div>
+            <div class="job-company">Webflow</div>
+            <div class="job-foot"><span class="mini-score">ATS 84</span><span class="age">3d</span></div>
+          </article>
+        </div><div class="empty-drop">Drop jobs here</div>
+      </section>
+      <section class="column" data-status="interview">
+        <header class="column-head"><span class="column-title">Interview</span><span class="column-count">2</span></header>
+        <div class="cards">
+          <article class="job-card" draggable="true" tabindex="0">
+            <div class="eyebrow">Ashby</div><div class="job-title">Product Lead, AI</div>
+            <div class="job-company">Intercom</div>
+            <div class="job-foot"><span class="mini-score">ATS 94</span><span class="age">today</span></div>
+          </article>
+          <article class="job-card" draggable="true" tabindex="0">
+            <div class="eyebrow">Greenhouse</div><div class="job-title">Group Product Manager</div>
+            <div class="job-company">GitLab</div>
+            <div class="job-foot"><span class="mini-score">ATS 88</span><span class="age">1d</span></div>
+          </article>
+        </div><div class="empty-drop">Drop jobs here</div>
+      </section>
+      <section class="column" data-status="offer">
+        <header class="column-head"><span class="column-title">Offer</span><span class="column-count">1</span></header>
+        <div class="cards">
+          <article class="job-card" draggable="true" tabindex="0">
+            <div class="eyebrow">Referral</div><div class="job-title">Director of Product</div>
+            <div class="job-company">Deel</div>
+            <div class="job-foot"><span class="mini-score">ATS 91</span><span class="age">today</span></div>
+          </article>
+        </div><div class="empty-drop">Drop jobs here</div>
+      </section>
+      <section class="column" data-status="rejected">
+        <header class="column-head"><span class="column-title">Rejected</span><span class="column-count">0</span></header>
+        <div class="cards"></div><div class="empty-drop">Drop jobs here</div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<dialog id="reason-dialog" aria-labelledby="dialog-title">
+  <form class="dialog-body" id="reason-form">
+    <h2 id="dialog-title">Move to Rejected</h2>
+    <div class="meta">A reason is required for a terminal transition.</div>
+    <div class="field">
+      <label for="reason">Reason</label>
+      <select id="reason" required>
+        <option value="">Choose a reason…</option><option>Company rejected</option>
+        <option>Candidate withdrew</option><option>Role closed</option><option>Other</option>
+      </select>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn" type="button" id="cancel">Cancel</button>
+      <button class="btn btn-danger" type="submit">Confirm move</button>
+    </div>
+  </form>
+</dialog>
+<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  let dragged = null;
+  let pendingColumn = null;
+  const reasonDialog = document.querySelector('#reason-dialog');
+  const toast = document.querySelector('#toast');
+
+  function updateCounts() {
+    document.querySelectorAll('.column').forEach((column) => {
+      column.querySelector('.column-count').textContent = column.querySelectorAll('.job-card').length;
+    });
+  }
+  function move(card, column) {
+    column.querySelector('.cards').append(card);
+    updateCounts();
+    toast.textContent = `${card.querySelector('.job-title').textContent} moved to ${column.querySelector('.column-title').textContent}.`;
+    toast.classList.remove('hidden');
+    window.setTimeout(() => toast.classList.add('hidden'), 2200);
+  }
+  document.querySelectorAll('.job-card').forEach((card) => {
+    card.addEventListener('dragstart', () => {
+      dragged = card;
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      document.querySelectorAll('.column').forEach((column) => column.classList.remove('over'));
+    });
+  });
+  document.querySelectorAll('.column').forEach((column) => {
+    column.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      column.classList.add('over');
+    });
+    column.addEventListener('dragleave', () => column.classList.remove('over'));
+    column.addEventListener('drop', (event) => {
+      event.preventDefault();
+      column.classList.remove('over');
+      if (!dragged || dragged.closest('.column') === column) return;
+      if (column.dataset.status === 'rejected') {
+        pendingColumn = column;
+        reasonDialog.showModal();
+      } else {
+        move(dragged, column);
+      }
+    });
+  });
+  document.querySelector('#cancel').addEventListener('click', () => {
+    pendingColumn = null;
+    reasonDialog.close();
+  });
+  document.querySelector('#reason-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!event.currentTarget.reportValidity()) return;
+    move(dragged, pendingColumn);
+    pendingColumn = null;
+    reasonDialog.close();
+    event.currentTarget.reset();
+  });
+</script>
+</body>
+</html>

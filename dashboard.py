@@ -6,6 +6,7 @@ import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from config import TRACKER_STATUSES
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
@@ -31,6 +32,83 @@ def _query(sql: str, params=()) -> list[dict]:
             return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
+
+
+TRACKER_FUNNEL_SQL = """
+    WITH qualified_jobs AS (
+        SELECT id
+        FROM jobs
+        WHERE deleted_at IS NULL
+          AND (
+              outcome = 'qualified'
+              OR (
+                  COALESCE(outcome, '') <> 'low_score'
+                  AND current_status = ANY(%s)
+              )
+          )
+    ),
+    stage_hits AS (
+        SELECT id AS job_id, current_status AS status
+        FROM jobs
+        WHERE deleted_at IS NULL AND current_status IS NOT NULL
+        UNION ALL
+        SELECT job_id, new_status AS status
+        FROM status_log
+    )
+    SELECT stage, COUNT(DISTINCT job_id) AS cnt
+    FROM (
+        SELECT id AS job_id, 'qualified' AS stage FROM qualified_jobs
+        UNION ALL
+        SELECT q.id, 'applied'
+        FROM qualified_jobs q
+        JOIN stage_hits h ON h.job_id = q.id
+        WHERE h.status = ANY(%s)
+        UNION ALL
+        SELECT q.id, 'interview'
+        FROM qualified_jobs q
+        JOIN stage_hits h ON h.job_id = q.id
+        WHERE h.status = ANY(%s)
+        UNION ALL
+        SELECT q.id, 'offer'
+        FROM qualified_jobs q
+        JOIN stage_hits h ON h.job_id = q.id
+        WHERE h.status = 'offer'
+    ) stages
+    GROUP BY stage
+"""
+
+REJECTION_REASONS_SQL = """
+    SELECT COALESCE(rejection_reason, NULLIF(why_not, ''), 'unspecified') AS reason,
+           COUNT(*) AS cnt
+    FROM jobs
+    WHERE deleted_at IS NULL
+      AND (
+          current_status = 'rejected'
+          OR outcome = 'low_score'
+      )
+    GROUP BY reason
+    ORDER BY cnt DESC, reason
+    LIMIT 8
+"""
+
+
+def _tracker_analytics() -> dict:
+    applied_statuses = ("applied", "recruiter_reply", "screen", "interview", "offer", "rejected")
+    interview_statuses = ("interview", "offer")
+    rows = _query(
+        TRACKER_FUNNEL_SQL,
+        (list(TRACKER_STATUSES), list(applied_statuses), list(interview_statuses)),
+    )
+    funnel = {"qualified": 0, "applied": 0, "interview": 0, "offer": 0}
+    funnel.update({r["stage"]: r["cnt"] for r in rows})
+    qualified = funnel["qualified"] or 0
+    applied = funnel["applied"] or 0
+    applied_rate = round((applied / qualified) * 100, 1) if qualified else 0
+    return {
+        "funnel": funnel,
+        "rejection_reasons": _query(REJECTION_REASONS_SQL),
+        "applied_rate": applied_rate,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -152,6 +230,7 @@ def dashboard(token: str = Query(default="")):
         FROM jobs WHERE outcome='qualified' AND company IS NOT NULL
         GROUP BY company ORDER BY cnt DESC, top_score DESC LIMIT 10
     """)
+    tracker = _tracker_analytics()
 
     # --- serialize for JS ---
     daily_labels = json.dumps([str(r["day"]) for r in daily])
@@ -170,6 +249,15 @@ def dashboard(token: str = Query(default="")):
 
     score_labels = json.dumps([r["bucket"] for r in score_dist])
     score_values = json.dumps([r["cnt"] for r in score_dist])
+    tracker_funnel_labels = json.dumps(["Qualified", "Applied", "Interview", "Offer"])
+    tracker_funnel_values = json.dumps([
+        tracker["funnel"]["qualified"],
+        tracker["funnel"]["applied"],
+        tracker["funnel"]["interview"],
+        tracker["funnel"]["offer"],
+    ])
+    rejection_reason_labels = json.dumps([r["reason"] for r in tracker["rejection_reasons"]])
+    rejection_reason_values = json.dumps([r["cnt"] for r in tracker["rejection_reasons"]])
 
     # --- recent runs table rows ---
     rows_html = ""
@@ -191,6 +279,10 @@ def dashboard(token: str = Query(default="")):
     top_html = "".join(
         f"<tr><td>{r['company']}</td><td class='green'>{r['cnt']}</td><td>{r['top_score']}</td></tr>"
         for r in top_companies
+    )
+    rejection_reason_html = "".join(
+        f"<tr><td>{r['reason']}</td><td class='green'>{r['cnt']}</td></tr>"
+        for r in tracker["rejection_reasons"]
     )
 
     html = f"""<!DOCTYPE html>
@@ -233,7 +325,7 @@ def dashboard(token: str = Query(default="")):
   <div class="kpi"><div class="val">{totals['runs']}</div><div class="label">Total runs</div></div>
   <div class="kpi"><div class="val green">{totals['qualified']}</div><div class="label">Qualified jobs</div></div>
   <div class="kpi"><div class="val">{totals['fetched']}</div><div class="label">Total fetched</div></div>
-  <div class="kpi"><div class="val">{totals['gpt_calls']}</div><div class="label">GPT calls used</div></div>
+  <div class="kpi"><div class="val">{tracker['applied_rate']}%</div><div class="label">Qualified → applied</div></div>
 </div>
 
 <div class="charts">
@@ -253,6 +345,33 @@ def dashboard(token: str = Query(default="")):
     <h2>Source performance</h2>
     <canvas id="sourceChart"></canvas>
   </div>
+  <div class="chart-box">
+    <h2>Tracker funnel</h2>
+    <canvas id="trackerFunnelChart"></canvas>
+  </div>
+  <div class="chart-box">
+    <h2>Top rejection reasons</h2>
+    <canvas id="rejectionReasonsChart"></canvas>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Tracker summary</h2>
+  <table>
+    <tr><th>Stage</th><th>Jobs</th></tr>
+    <tr><td>Qualified</td><td class="green">{tracker['funnel']['qualified']}</td></tr>
+    <tr><td>Applied</td><td class="green">{tracker['funnel']['applied']}</td></tr>
+    <tr><td>Interview</td><td class="green">{tracker['funnel']['interview']}</td></tr>
+    <tr><td>Offer</td><td class="green">{tracker['funnel']['offer']}</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Rejection reasons</h2>
+  <table>
+    <tr><th>Reason</th><th>Jobs</th></tr>
+    {rejection_reason_html}
+  </table>
 </div>
 
 <div class="section">
@@ -326,6 +445,27 @@ C('sourceChart', {{
   options: {{ responsive:true, scales: {{
     x: {{ grid, ticks: font }}, y: {{ grid, ticks: font }}
   }}, plugins: {{ legend: {{ labels: {{ color:'#888' }} }} }} }}
+}});
+
+C('trackerFunnelChart', {{
+  type: 'bar',
+  data: {{
+    labels: {tracker_funnel_labels},
+    datasets: [{{ data: {tracker_funnel_values},
+      backgroundColor: ['#4ade80','#60a5fa','#fbbf24','#a78bfa'] }}]
+  }},
+  options: {{ responsive:true, plugins:{{ legend:{{display:false}} }},
+    scales: {{ x: {{ grid, ticks: font }}, y: {{ grid, ticks: font }} }} }}
+}});
+
+C('rejectionReasonsChart', {{
+  type: 'bar',
+  data: {{
+    labels: {rejection_reason_labels},
+    datasets: [{{ data: {rejection_reason_values}, backgroundColor: '#f87171' }}]
+  }},
+  options: {{ indexAxis:'y', responsive:true, plugins:{{ legend:{{display:false}} }},
+    scales: {{ x: {{ grid, ticks: font }}, y: {{ grid, ticks: font }} }} }}
 }});
 </script>
 </body>
