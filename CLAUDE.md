@@ -12,7 +12,8 @@ Project notes for Claude Code sessions.
 ## Current repo state
 
 - Active project: JobScraper + resumebuilder-cloud (merged 2026-08-14: shared
-  Postgres, cloud scoring in shadow mode, unified plan)
+  Postgres; cloud scoring CUT OVER 2026-08-17 — USE_CLOUD_SCORING=1,
+  ATS_THRESHOLD=70, core/ats.py kept as rollback until Phase 5)
 - Source of truth for the plan and roadmap: `PROJECT.md` (consolidated
   2026-08-17 from ROADMAP/BACKLOG/tasks/requirements — those live in `archive/`)
 - Source of truth for session state: `CONTEXT.md` (Resume block = active track)
@@ -25,11 +26,12 @@ Project notes for Claude Code sessions.
 ## Current workstreams
 
 See `PROJECT.md` → "Активный трек". Short version:
-1. Scoring cutover (`USE_CLOUD_SCORING=1`, `ATS_THRESHOLD` 60→70) — pending
-   Dimitry's go after the Saturday shadow report.
-2. Release 1 resume features (Generate-resume button, auto-score on Add-job,
-   Re-score in duplicate dialog) — pending Dimitry's go.
-3. Release 2 auto-generation (score ≥80 gates) — after cutover.
+1. Scoring cutover — DONE 2026-08-17; watch `ats_error` in the Telegram summary
+   for ~a day. Rollback: `USE_CLOUD_SCORING=shadow` + revert threshold commit.
+2. Release 1 resume features — DONE 2026-08-17 (tests green, not yet clicked
+   through live): Generate-resume button, /jobs/{id}/resume-pdf, auto-score on
+   Add-job, Re-score in duplicate dialog.
+3. Release 2 auto-generation (score ≥80 gates, confirmed 2026-08-17) — next.
 4. Phase 4 input-data fixes, Phase 5 cleanup (~2026-08-28).
 
 ## Working rules

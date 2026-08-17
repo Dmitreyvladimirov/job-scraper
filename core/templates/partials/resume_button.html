@@ -1,0 +1,21 @@
+{# Generate-resume slot in the card peek modal (Release 1). POST /jobs/{id}/resume
+   swaps this span wholesale (outerHTML), so the button becomes the Open-resume link
+   the moment an artifact exists — a repeat click opens, never re-generates. #}
+<span id="resume-slot-{{ job.id }}" style="display:inline-flex;align-items:center;gap:8px">
+  {% if resume_error %}<span style="font-size:12px;color:var(--color-neutral-600)">{{ resume_error }}</span>{% endif %}
+  {% if job.resume_run_id %}
+    <a class="btn btn-primary" href="/jobs/{{ job.id }}/resume-pdf" target="_blank" rel="noopener" style="gap:6px">
+      Open resume{% if skeptic_count %}<span class="tag tag-neutral" title="Skeptic flags on this resume">{{ skeptic_count }} ⚑</span>{% endif %}
+    </a>
+  {% elif resume_block_reason %}
+    <button type="button" class="btn btn-secondary" disabled title="{{ resume_block_reason }}">Generate resume</button>
+  {% else %}
+    <button type="button" class="btn btn-secondary"
+            hx-post="/jobs/{{ job.id }}/resume"
+            hx-target="#resume-slot-{{ job.id }}" hx-swap="outerHTML"
+            hx-disabled-elt="this">
+      <span>Generate resume</span>
+      <span class="htmx-indicator" style="font-size:12px;color:var(--color-neutral-600)">generating, 1–2 min…</span>
+    </button>
+  {% endif %}
+</span>

@@ -1,0 +1,17 @@
+{# ATS line + Re-score button inside the Add-job duplicate dialog (Release 1).
+   POST /jobs/{id}/rescore swaps this div wholesale with the fresh verdict. #}
+<div id="rescore-slot-{{ job_id }}" style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px">
+  <span style="font-feature-settings:'tnum'">ATS: <strong>{{ ats_score if ats_score is not none else '—' }}</strong></span>
+  {% if updated %}
+    <span style="color:var(--color-accent-700)">re-scored ✓</span>
+  {% else %}
+    {% if error %}<span style="color:var(--color-neutral-600)">{{ error }}</span>{% endif %}
+    <button type="button" class="btn btn-ghost" style="font-size:12px;padding:2px 8px"
+            hx-post="/jobs/{{ job_id }}/rescore"
+            hx-target="#rescore-slot-{{ job_id }}" hx-swap="outerHTML"
+            hx-disabled-elt="this">
+      <span>Re-score</span>
+      <span class="htmx-indicator" style="color:var(--color-neutral-600)">scoring…</span>
+    </button>
+  {% endif %}
+</div>

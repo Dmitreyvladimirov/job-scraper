@@ -59,6 +59,7 @@
     <div class="dialog-actions" style="margin-top:6px">
       {% set posting_url = (job.apply_url or job.url)|safe_url %}
       {% if posting_url %}<a class="btn btn-ghost" href="{{ posting_url }}" target="_blank" rel="noopener noreferrer" style="gap:5px">Open posting<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>{% endif %}
+      {% include 'partials/resume_button.html' %}
       <span style="flex:1"></span>
       {% if job.current_status == 'rejected' %}
         <button type="button" class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status" hx-vals='{"new_status": "{{ job.rejected_from or "found" }}"}' hx-swap="none" hx-on::after-request="if(event.detail.successful) location.reload()">Restore → {{ status_labels.get(job.rejected_from, "Found") }}</button>

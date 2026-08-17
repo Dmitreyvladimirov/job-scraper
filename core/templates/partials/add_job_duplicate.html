@@ -14,6 +14,7 @@
           {% if existing.current_status %} · status: {{ existing.current_status }}{% endif %}
           {% if existing.logged_at %} · added {{ existing.logged_at.strftime('%Y-%m-%d') }}{% endif %}
         </div>
+        {% with job_id = existing.id, ats_score = existing.ats_score %}{% include 'partials/rescore_slot.html' %}{% endwith %}
       </div>
       <div style="font-size:12px;color:var(--color-neutral-600);margin-top:10px">Add anyway creates a second, independent card.</div>
     </div>

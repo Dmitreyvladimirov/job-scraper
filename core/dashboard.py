@@ -10,16 +10,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+import threading
+
 import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import db
+import resume_client
+import scoring_client
 from config import CURRENT_STATUSES, DOMAIN_COLORS, FUNNEL_ORDER, REJECTION_REASON_LABELS, USER_REJECTION_REASONS
 
 logger = logging.getLogger(__name__)
@@ -380,6 +384,34 @@ def kanban(
     })
 
 
+RESUME_MIN_JD_CHARS = 200
+
+
+def _resume_block_reason(job: dict) -> str | None:
+    """Release-1 generation gates. The resume service would happily generate from a
+    bare title, but the output files by company and tailors by JD text — so both are
+    quality gates here, not service requirements. The template disables the button
+    with this exact reason; the 422 in the route is the backstop for direct callers."""
+    if not (job.get("company") or "").strip():
+        return "Company is required — the resume is titled and filed by company"
+    if len(job.get("description") or "") < RESUME_MIN_JD_CHARS:
+        return f"JD is under {RESUME_MIN_JD_CHARS} chars — paste the full description first"
+    return None
+
+
+def _resume_slot_context(job: dict, error: str | None = None) -> dict:
+    """Everything partials/resume_button.html needs, derived fresh from the row."""
+    skeptic_count = 0
+    if job.get("resume_run_id"):
+        skeptic_count = db.get_resume_skeptic_count(job["resume_run_id"])
+    return {
+        "job": job,
+        "skeptic_count": skeptic_count,
+        "resume_block_reason": None if job.get("resume_run_id") else _resume_block_reason(job),
+        "resume_error": error,
+    }
+
+
 @app.get("/jobs/{job_id}/detail", response_class=HTMLResponse)
 def job_detail(request: Request, job_id: int):
     """Card peek modal (design_handoff_review_ui Turn 4a) — full ATS breakdown as
@@ -395,7 +427,117 @@ def job_detail(request: Request, job_id: int):
             next_status = FUNNEL_ORDER[idx + 1]
     return templates.TemplateResponse(request, "partials/job_detail_modal.html", {
         "job": job, "next_status": next_status, "status_labels": STATUS_LABELS,
+        **_resume_slot_context(job),
     })
+
+
+@app.post("/jobs/{job_id}/resume", response_class=HTMLResponse)
+def generate_resume(request: Request, job_id: int):
+    """Generate-resume button in the peek modal. Synchronous on purpose — the browser
+    waits behind hx-disabled-elt/hx-indicator (~1–2 min), and the swapped-in fragment
+    is the Open-resume link, so 'click, wait, open' needs no polling machinery.
+    A repeat click (or a second window) finds resume_run_id already set and just gets
+    the ready link back without paying for a second generation."""
+    _authenticate(request)
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown job id")
+
+    if job.get("resume_run_id"):
+        return templates.TemplateResponse(
+            request, "partials/resume_button.html", _resume_slot_context(job))
+
+    reason = _resume_block_reason(job)
+    if reason:
+        raise HTTPException(status_code=422, detail=reason)
+
+    # Reuse the scoring correlation id when the row has one, so the vacancy's score
+    # and resume runs line up under a single pipeline_run_id in the cloud tables.
+    pipeline_run_id = job.get("pipeline_run_id") or f"dash-{job_id}-{int(time.time())}"
+    outcome, error_kind = resume_client.generate_via_cloud(job, pipeline_run_id)
+    if outcome is None:
+        error = ("Resume service misconfigured (auth/deploy) — check RESUME_TOKEN"
+                 if error_kind == "config"
+                 else "Generation failed — try again in a minute")
+        return templates.TemplateResponse(
+            request, "partials/resume_button.html", _resume_slot_context(job, error=error))
+
+    db.set_resume_run_id(job_id, outcome.generation_run_id)
+    job["resume_run_id"] = outcome.generation_run_id
+    return templates.TemplateResponse(
+        request, "partials/resume_button.html", _resume_slot_context(job))
+
+
+@app.get("/jobs/{job_id}/resume-pdf")
+def resume_pdf(request: Request, job_id: int):
+    """Stream the generated PDF straight from resume.artifact — same Postgres since
+    the 2026-08-14 DB merge, so no share-link round-trip through the resume service.
+    Cookie-authenticated like every other dashboard route; 'inline' so the browser
+    previews with its own download button (same choice as the resume service)."""
+    _authenticate(request)
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown job id")
+    if not job.get("resume_run_id"):
+        raise HTTPException(status_code=404, detail="No resume generated for this vacancy")
+    stored = db.get_resume_pdf(job["resume_run_id"])
+    if stored is None:
+        raise HTTPException(status_code=404, detail="Resume artifact not found")
+    pdf_bytes, company = stored
+    filename = f"Dimitry Kucher_PM_{company or job['resume_run_id']}.pdf".replace('"', "")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@app.post("/jobs/{job_id}/rescore", response_class=HTMLResponse)
+def rescore_job(request: Request, job_id: int):
+    """Re-score button in the Add-job duplicate dialog — the likeliest reason the
+    old card's score looks wrong is that it predates the cloud scorer, so offer a
+    fresh verdict right where the stale one is shown. Synchronous like the scraper's
+    own scoring call (~10–30 s behind hx-disabled-elt)."""
+    _authenticate(request)
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown job id")
+    if not (job.get("description") or "").strip():
+        return templates.TemplateResponse(request, "partials/rescore_slot.html", {
+            "job_id": job_id, "ats_score": job.get("ats_score"),
+            "error": "No JD text on this card — nothing to score",
+        })
+    pipeline_run_id = f"dash-rescore-{job_id}-{int(time.time())}"
+    result, _error_kind = scoring_client.analyze_via_cloud(job, pipeline_run_id)
+    if result is None:
+        return templates.TemplateResponse(request, "partials/rescore_slot.html", {
+            "job_id": job_id, "ats_score": job.get("ats_score"),
+            "error": "Scoring failed — try again in a minute",
+        })
+    db.update_job_scoring(job_id, result, pipeline_run_id)
+    return templates.TemplateResponse(request, "partials/rescore_slot.html", {
+        "job_id": job_id, "ats_score": result.score, "updated": True,
+    })
+
+
+def _auto_score_job(job_id: int) -> None:
+    """Background auto-score for hand-added cards (they never met the scraper's
+    scoring path, so without this they stay unscored forever). Daemon thread off the
+    Add-job request: the toast returns immediately, the score lands on the card by
+    the next page load. Any failure is logged and swallowed — an unscored card is
+    exactly as usable as before this feature existed."""
+    try:
+        job = db.get_job(job_id)
+        if not job or job.get("ats_score") is not None:
+            return
+        if not (job.get("description") or "").strip():
+            return
+        pipeline_run_id = f"dash-add-{job_id}-{int(time.time())}"
+        result, _error_kind = scoring_client.analyze_via_cloud(job, pipeline_run_id)
+        if result is not None:
+            db.update_job_scoring(job_id, result, pipeline_run_id)
+    except Exception:
+        logger.exception(f"Auto-score failed for job {job_id}")
 
 
 @app.post("/jobs/{job_id}/status", response_class=HTMLResponse)
@@ -495,7 +637,7 @@ def create_job(
                 "existing": existing, "fields": fields,
             })
 
-    db.create_manual_job({
+    job_id = db.create_manual_job({
         "title": title,
         "company": company.strip() or None,
         "url": url.strip() or None,
@@ -506,12 +648,18 @@ def create_job(
         "description": description.strip() or None,
         "published": None,
     })
+    # Auto-score in the background (Release 1): the toast must not wait the ~10–30 s
+    # a cloud scoring call takes, and a scoring failure must not fail the Add.
+    has_jd = bool(description.strip())
+    if has_jd:
+        threading.Thread(target=_auto_score_job, args=(job_id,), daemon=True).start()
     # Replaces the dialog (hx-swap=outerHTML on #add-job-dialog): the form vanishes and
     # the swapped-in script fires a toast — no location.reload(), so kanban filters,
     # selection and scroll position survive. The new card appears on the next page load.
     # .replace guards against </script> breakout from a pasted title — json.dumps
     # escapes quotes but not the '</' sequence that would close the script tag.
-    toast_title = json.dumps(f"Added: {title}").replace("</", "<\\/")
+    toast_text = f"Added: {title}" + (" — scoring in background" if has_jd else "")
+    toast_title = json.dumps(toast_text).replace("</", "<\\/")
     return HTMLResponse(f"<script>window.showToast && window.showToast({toast_title})</script>")
 
 

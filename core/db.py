@@ -120,6 +120,12 @@ def init_db() -> None:
                 cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS shadow_score INTEGER")
                 cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS shadow_payload JSONB")
 
+                # Release 1 resume features: generation_run_id in the resume service's
+                # resume.generation_run/resume.artifact tables (same Postgres since the
+                # 2026-08-14 DB merge). NULL = no resume generated for this vacancy yet —
+                # also Release 2's batch-generation guard (resume_run_id IS NULL).
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS resume_run_id INTEGER")
+
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS status_log (
                         id         SERIAL PRIMARY KEY,
@@ -301,7 +307,7 @@ def find_manual_duplicate(url: str | None, company: str | None, title: str) -> d
         with conn.cursor() as cur:
             if url:
                 cur.execute(
-                    "SELECT id, title, company, source, current_status, logged_at FROM jobs "
+                    "SELECT id, title, company, source, current_status, logged_at, ats_score FROM jobs "
                     "WHERE url = %s OR apply_url = %s ORDER BY id DESC LIMIT 1",
                     (url, url),
                 )
@@ -310,7 +316,7 @@ def find_manual_duplicate(url: str | None, company: str | None, title: str) -> d
                     return dict(row)
             if company:
                 cur.execute(
-                    "SELECT id, title, company, source, current_status, logged_at FROM jobs "
+                    "SELECT id, title, company, source, current_status, logged_at, ats_score FROM jobs "
                     "WHERE lower(trim(company)) = lower(trim(%s)) "
                     "AND lower(trim(title)) = lower(trim(%s)) ORDER BY id DESC LIMIT 1",
                     (company, title),
@@ -370,6 +376,104 @@ def mark_job_applied(job_id: int, source: str = "resumebuilder") -> dict:
         conn.close()
     logger.info(f"Status changed: job={job_id} {old_status} -> applied (via {source})")
     return {"job_id": job_id, "old_status": old_status, "new_status": "applied"}
+
+
+def set_resume_run_id(job_id: int, resume_run_id: int) -> None:
+    """Record which resume.generation_run belongs to this vacancy. Deliberately not
+    conditional on the column being NULL — an explicit regeneration (not built yet,
+    but cheap to allow) should simply point the card at the newest artifact."""
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE jobs SET resume_run_id = %s WHERE id = %s",
+                    (resume_run_id, job_id),
+                )
+    finally:
+        conn.close()
+
+
+def get_resume_pdf(resume_run_id: int) -> tuple[bytes, str | None] | None:
+    """(pdf_bytes, company) straight from the resume service's tables — same Postgres
+    since the DB merge, so the dashboard can stream the PDF itself instead of minting
+    a TTL'd share link against the resume service."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT a.pdf_bytes, g.company
+                   FROM resume.artifact a
+                   JOIN resume.generation_run g ON g.id = a.generation_run_id
+                   WHERE a.generation_run_id = %s""",
+                (resume_run_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return bytes(row["pdf_bytes"]), row["company"]
+    finally:
+        conn.close()
+
+
+def get_resume_skeptic_count(resume_run_id: int) -> int:
+    """How many Skeptic findings the generation recorded — shown as a small counter
+    next to the Open-resume link. 0 for a missing run or NULL findings (failed runs
+    have skeptic_findings NULL per resumebuilder-cloud migration 0002)."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(jsonb_array_length(skeptic_findings), 0) AS n "
+                "FROM resume.generation_run WHERE id = %s",
+                (resume_run_id,),
+            )
+            row = cur.fetchone()
+            return row["n"] if row else 0
+    finally:
+        conn.close()
+
+
+def update_job_scoring(job_id: int, result, pipeline_run_id: str) -> None:
+    """Write a fresh cloud-scoring verdict onto an existing row — the dashboard's
+    auto-score-after-Add-job and Re-score paths. `result` is an ats.ATSResult (typed
+    loosely to keep db.py import-light). Unlike log_job() this never touches
+    outcome/current_status: a hand-added card is Dimitry's decision to track,
+    so a low score must not knock it off the kanban."""
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE jobs SET
+                           ats_score = %s, domain = %s, why_apply = %s, why_not = %s,
+                           matched_keywords = %s, missed_keywords = %s, penalty_reason = %s,
+                           role_score = %s, domain_score = %s, domain_value_score = %s,
+                           domain_exp_score = %s, keyword_score = %s, location_score = %s,
+                           location_reason = %s, pipeline_run_id = %s, scoring_source = 'cloud'
+                       WHERE id = %s""",
+                    (
+                        result.score,
+                        result.domain,
+                        result.why_apply,
+                        result.why_not,
+                        json.dumps(result.matched),
+                        json.dumps(result.missed),
+                        result.penalty_reason or None,
+                        result.role_score,
+                        result.domain_score,
+                        result.domain_value_score,
+                        result.domain_exp_score,
+                        result.keyword_score,
+                        result.location_score,
+                        result.location_reason or None,
+                        pipeline_run_id,
+                        job_id,
+                    ),
+                )
+    finally:
+        conn.close()
+    logger.info(f"Scoring updated: job={job_id} score={result.score} [{pipeline_run_id}]")
 
 
 def load_seen_jobs() -> tuple[set[str], set[tuple[str, str]]]:

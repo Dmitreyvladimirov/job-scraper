@@ -264,6 +264,135 @@ def test_bulk_reject_form_unknown_ids_404():
     assert r.status_code == 404
 
 
+# --- Release 1 resume features (Generate resume / resume-pdf / Re-score) ---
+# DB access is monkeypatched to fakes — these tests must not write rows into the
+# real DB (there is no separate test DB) or call the paid generation service.
+
+def _fake_job(**overrides):
+    job = {
+        "id": 1, "title": "PM", "company": "Acme", "current_status": "found",
+        "description": "x" * 500, "resume_run_id": None, "pipeline_run_id": None,
+        "ats_score": 70, "rejected_from": None,
+    }
+    job.update(overrides)
+    return job
+
+
+def test_generate_resume_rejects_no_cookie():
+    r = _anon_client().post("/jobs/1/resume")
+    assert r.status_code == 403
+
+
+def test_resume_pdf_rejects_no_cookie():
+    r = _anon_client().get("/jobs/1/resume-pdf")
+    assert r.status_code == 403
+
+
+def test_rescore_rejects_no_cookie():
+    r = _anon_client().post("/jobs/1/rescore")
+    assert r.status_code == 403
+
+
+def test_generate_resume_unknown_job_404():
+    r = _authenticated_client().post("/jobs/999999999/resume")
+    assert r.status_code == 404
+
+
+def test_generate_resume_missing_company_422(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job(company=None))
+    r = _authenticated_client().post("/jobs/1/resume")
+    assert r.status_code == 422
+    assert "Company" in r.json()["detail"]
+
+
+def test_generate_resume_short_jd_422(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job(description="too short"))
+    r = _authenticated_client().post("/jobs/1/resume")
+    assert r.status_code == 422
+    assert "JD" in r.json()["detail"]
+
+
+def test_generate_resume_success_stores_run_id_and_returns_link(monkeypatch):
+    stored = {}
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job())
+    monkeypatch.setattr(dashboard.db, "set_resume_run_id",
+                        lambda job_id, run_id: stored.update({job_id: run_id}))
+    monkeypatch.setattr(dashboard.db, "get_resume_skeptic_count", lambda _run_id: 2)
+    monkeypatch.setattr(
+        dashboard.resume_client, "generate_via_cloud",
+        lambda job, prid: (dashboard.resume_client.ResumeOutcome(77, [{}, {}]), "none"),
+    )
+    r = _authenticated_client().post("/jobs/1/resume")
+    assert r.status_code == 200
+    assert stored == {1: 77}
+    assert "Open resume" in r.text
+    assert "/jobs/1/resume-pdf" in r.text
+
+
+def test_generate_resume_already_generated_returns_link_without_calling_service(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job(resume_run_id=77))
+    monkeypatch.setattr(dashboard.db, "get_resume_skeptic_count", lambda _run_id: 0)
+
+    def _must_not_be_called(job, prid):
+        raise AssertionError("generation must not run again for an existing resume")
+
+    monkeypatch.setattr(dashboard.resume_client, "generate_via_cloud", _must_not_be_called)
+    r = _authenticated_client().post("/jobs/1/resume")
+    assert r.status_code == 200
+    assert "Open resume" in r.text
+
+
+def test_generate_resume_service_failure_returns_retryable_button(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job())
+    monkeypatch.setattr(
+        dashboard.resume_client, "generate_via_cloud", lambda job, prid: (None, "transient"))
+    r = _authenticated_client().post("/jobs/1/resume")
+    assert r.status_code == 200
+    assert "Generation failed" in r.text
+    assert "Generate resume" in r.text  # button still there for a retry
+
+
+def test_resume_pdf_no_resume_yet_404(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job(resume_run_id=None))
+    r = _authenticated_client().get("/jobs/1/resume-pdf")
+    assert r.status_code == 404
+
+
+def test_resume_pdf_streams_inline(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job(resume_run_id=77))
+    monkeypatch.setattr(dashboard.db, "get_resume_pdf", lambda _run_id: (b"%PDF-fake", "Acme"))
+    r = _authenticated_client().get("/jobs/1/resume-pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert "inline" in r.headers["content-disposition"]
+    assert r.content == b"%PDF-fake"
+
+
+def test_rescore_updates_row_and_reports_new_score(monkeypatch):
+    updates = {}
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job())
+    monkeypatch.setattr(dashboard.db, "update_job_scoring",
+                        lambda job_id, result, prid: updates.update({job_id: result.score}))
+
+    class _Result:
+        score = 91
+
+    monkeypatch.setattr(
+        dashboard.scoring_client, "analyze_via_cloud", lambda job, prid: (_Result(), "none"))
+    r = _authenticated_client().post("/jobs/1/rescore")
+    assert r.status_code == 200
+    assert updates == {1: 91}
+    assert "91" in r.text
+    assert "re-scored" in r.text
+
+
+def test_rescore_without_jd_reports_error_not_500(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job(description=None))
+    r = _authenticated_client().post("/jobs/1/rescore")
+    assert r.status_code == 200
+    assert "nothing to score" in r.text
+
+
 def test_bulk_reject_form_for_real_jobs():
     conn = dashboard.psycopg2.connect(
         dashboard.DATABASE_URL, cursor_factory=dashboard.psycopg2.extras.RealDictCursor, connect_timeout=10
