@@ -246,6 +246,11 @@ textarea.input { min-height: 90px; resize: vertical; }
   width: min(440px, 100%); display: flex; flex-direction: column; gap: var(--space-3);
   padding: var(--space-4); border-radius: var(--radius-lg);
   background: var(--color-surface); box-shadow: var(--shadow-lg); border: 1px solid var(--color-divider);
+  /* A content-heavy peek modal (full breakdown + keywords + why-apply/why-not +
+     notes) can outgrow the viewport — cap and scroll inside, so Notes and the
+     action row are always reachable (Dimitry, 2026-08-18). */
+  max-height: calc(100vh - 2 * var(--space-4));
+  overflow-y: auto;
 }
 .dialog-title {
   font-family: var(--font-heading); font-weight: var(--font-heading-weight);
