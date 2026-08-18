@@ -18,3 +18,5 @@ jobs.db
 shortlist_enriched.json
 rescore_final.json
 *.zip
+.venv.nosync/
+.venv
