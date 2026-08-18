@@ -123,6 +123,8 @@ REJECTION_REASONS = [
     "low_salary",
     "inactive_closed",
     "bad_in_general",
+    "dislike_company",
+    "prior_bad_interview",
     "company_rejected",
     "old",
     "geo_restricted_auto",
@@ -133,6 +135,11 @@ REJECTION_REASON_LABELS = {
     "low_salary": "Low salary",
     "inactive_closed": "Inactive / closed posting",
     "bad_in_general": "Bad fit in general",
+    # Company-level verdicts by Dimitry (2026-08-18): the company itself is the
+    # problem, not this posting. Reasons only — no auto-blocklist of future
+    # postings (offered, declined for now).
+    "dislike_company": "Don't like the company",
+    "prior_bad_interview": "Failed interview with them before",
     # The company's decision, not Dimitry's: applied but not advanced past some
     # selection stage (added 2026-08-17). The kanban already records WHICH stage via
     # status_log's rejected-from tracking; this reason records WHY the card died.
