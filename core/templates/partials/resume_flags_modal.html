@@ -1,0 +1,31 @@
+{# Skeptic flags dialog (2026-08-19) — opened by clicking the flag badge on the
+   Open-resume link. Shows what survived the repair round and how much it fixed. #}
+<div class="dialog-backdrop" id="resume-flags-dialog" style="z-index:60" onclick="if(event.target===this) this.remove()">
+  <div class="dialog" style="width:600px;max-width:92%">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <div class="dialog-title" style="margin:0">Skeptic flags</div>
+      <span style="font-size:12px;color:var(--color-neutral-600);font-feature-settings:'tnum'">
+        {% if flags.before_count > flags.findings|length %}was {{ flags.before_count }} → now {{ flags.findings|length }} after auto-repair{% else %}{{ flags.findings|length }} finding{{ 's' if flags.findings|length != 1 }}{% endif %}
+      </span>
+      <span style="flex:1"></span>
+      <button type="button" class="btn btn-icon btn-ghost" aria-label="Close" onclick="document.getElementById('resume-flags-dialog').remove()">✕</button>
+    </div>
+    {% if flags.findings %}
+    <div style="display:grid;gap:10px;margin-top:8px">
+      {% for f in flags.findings %}
+      <div style="border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:9px 12px;font-size:13px">
+        <div style="display:flex;gap:8px;align-items:baseline">
+          <span class="tag tag-neutral">{{ f.category|replace('_',' ') }}</span>
+          <b>«{{ f.phrase }}»</b>
+          <span style="color:var(--color-neutral-600);font-size:11.5px;margin-left:auto">{{ f.location }}</span>
+        </div>
+        <div style="color:var(--color-neutral-700);margin-top:4px">{{ f.why }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <p style="font-size:12px;color:var(--color-neutral-600);margin-top:6px">These survived the auto-repair — usually because fixing them would require inventing facts (e.g. no alternative bullet without the duplicated metric). Worth a quick manual look before sending.</p>
+    {% else %}
+    <p style="font-style:italic;color:var(--color-neutral-600);font-size:13px;margin-top:8px">All flags fixed by the auto-repair — nothing left to review.</p>
+    {% endif %}
+  </div>
+</div>

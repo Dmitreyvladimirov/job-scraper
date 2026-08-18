@@ -4,9 +4,9 @@
 <span id="resume-slot-{{ job.id }}" style="display:inline-flex;align-items:center;gap:8px">
   {% if resume_error %}<span style="font-size:12px;color:var(--color-neutral-600)">{{ resume_error }}</span>{% endif %}
   {% if job.resume_run_id %}
-    <a class="btn btn-primary" href="/jobs/{{ job.id }}/resume-pdf" target="_blank" rel="noopener" style="gap:6px">
-      Open resume{% if skeptic_count %}<span class="tag tag-neutral" title="Skeptic flags on this resume">{{ skeptic_count }} ⚑</span>{% endif %}
-    </a>
+    <a class="btn btn-primary" href="/jobs/{{ job.id }}/resume-pdf" target="_blank" rel="noopener" style="gap:6px">Open resume</a>
+    {% if skeptic_count %}<span class="tag tag-neutral" style="cursor:pointer" title="Show Skeptic flags"
+          hx-get="/jobs/{{ job.id }}/resume-flags" hx-target="#reject-modal-slot" hx-swap="innerHTML">{{ skeptic_count }} ⚑</span>{% endif %}
   {% elif resume_block_reason %}
     <button type="button" class="btn btn-secondary" disabled title="{{ resume_block_reason }}">Generate resume</button>
   {% else %}

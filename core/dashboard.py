@@ -522,6 +522,22 @@ def generate_resume(request: Request, job_id: int):
         request, "partials/resume_button.html", _resume_slot_context(job))
 
 
+@app.get("/jobs/{job_id}/resume-flags", response_class=HTMLResponse)
+def resume_flags(request: Request, job_id: int):
+    """Skeptic-flags dialog behind the badge on the Open-resume link: what
+    survived the repair round, with the was→now counts."""
+    _authenticate(request)
+    job = db.get_job(job_id)
+    if not job or not job.get("resume_run_id"):
+        raise HTTPException(status_code=404, detail="No resume generated for this vacancy")
+    flags = db.get_resume_flags(job["resume_run_id"])
+    if flags is None:
+        raise HTTPException(status_code=404, detail="Resume run not found")
+    return templates.TemplateResponse(request, "partials/resume_flags_modal.html", {
+        "flags": flags,
+    })
+
+
 @app.get("/jobs/{job_id}/resume-pdf")
 def resume_pdf(request: Request, job_id: int):
     """Stream the generated PDF straight from resume.artifact — same Postgres since

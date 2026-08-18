@@ -500,6 +500,29 @@ def get_applied_today() -> list[dict]:
         conn.close()
 
 
+def get_resume_flags(resume_run_id: int) -> dict | None:
+    """Post-repair Skeptic findings + the pre-repair count for the flags dialog
+    ('было 11 → стало 2'). before_count equals the findings length for runs
+    generated before the repair stage existed (no *_before stored)."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT coalesce(skeptic_findings, '[]'::jsonb) AS findings,
+                          jsonb_array_length(coalesce(
+                              resolved_content->'skeptic_findings_before',
+                              coalesce(skeptic_findings, '[]'::jsonb))) AS before_count,
+                          jsonb_array_length(coalesce(
+                              resolved_content->'repair_actions', '[]'::jsonb)) AS repairs
+                   FROM resume.generation_run WHERE id = %s""",
+                (resume_run_id,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 def get_resume_skeptic_count(resume_run_id: int) -> int:
     """How many Skeptic findings the generation recorded — shown as a small counter
     next to the Open-resume link. 0 for a missing run or NULL findings (failed runs
