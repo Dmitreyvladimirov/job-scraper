@@ -462,6 +462,23 @@ def job_detail(request: Request, job_id: int):
     })
 
 
+@app.post("/jobs/{job_id}/merge-into", response_class=HTMLResponse)
+def merge_into(request: Request, job_id: int, target_id: str = Form(...)):
+    """Fold this card (the duplicate) into target_id (the one kept). Returns a
+    toast + reload script — both cards' board positions change."""
+    _authenticate(request)
+    if not target_id.strip().lstrip("#").isdigit():
+        raise HTTPException(status_code=400, detail=f"Not a card number: {target_id!r}")
+    try:
+        result = db.merge_duplicate(int(target_id.strip().lstrip("#")), job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    toast = json.dumps(f"Card #{job_id} merged into #{result['kept_id']}").replace("</", "<\\/")
+    return HTMLResponse(
+        f"<script>window.showToast && window.showToast({toast});"
+        f"setTimeout(function(){{location.reload()}}, 600)</script>")
+
+
 @app.get("/jobs/{job_id}/edit-form", response_class=HTMLResponse)
 def edit_job_form(request: Request, job_id: int):
     _authenticate(request)

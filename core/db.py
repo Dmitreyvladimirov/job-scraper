@@ -500,6 +500,64 @@ def get_applied_today() -> list[dict]:
         conn.close()
 
 
+def merge_duplicate(kept_id: int, dup_id: int) -> dict:
+    """Fold a duplicate card into the one being kept (2026-08-19): notes move over,
+    the resume link is inherited if the kept card lacks one, the kept card adopts
+    the duplicate's funnel status when the duplicate got further, and the duplicate
+    is rejected with reason 'duplicate'. Raises ValueError with a user-facing
+    message on anything invalid — the route turns that into a 400."""
+    if kept_id == dup_id:
+        raise ValueError("A card cannot be merged into itself")
+    kept, dup = get_job(kept_id), get_job(dup_id)
+    if not kept:
+        raise ValueError(f"Unknown card #{kept_id}")
+    if not dup:
+        raise ValueError(f"Unknown card #{dup_id}")
+    if kept.get("current_status") in (None, "rejected"):
+        raise ValueError(f"Card #{kept_id} is not a live funnel card — merge into the card you keep")
+
+    from config import FUNNEL_ORDER  # local import, same cycle-avoidance as update_job_status
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE job_comments SET job_id = %s WHERE job_id = %s", (kept_id, dup_id))
+                if dup.get("resume_run_id") and not kept.get("resume_run_id"):
+                    cur.execute("UPDATE jobs SET resume_run_id = %s WHERE id = %s",
+                                (dup["resume_run_id"], kept_id))
+                # Adopt the duplicate's further-along status (it may carry the real
+                # applied_at — keep the earliest known application time).
+                ks, ds = kept.get("current_status"), dup.get("current_status")
+                if ds in FUNNEL_ORDER and ks in FUNNEL_ORDER and \
+                        FUNNEL_ORDER.index(ds) > FUNNEL_ORDER.index(ks):
+                    cur.execute(
+                        "UPDATE jobs SET current_status = %s, "
+                        "applied_at = LEAST(coalesce(applied_at, %s), coalesce(%s, applied_at)) "
+                        "WHERE id = %s",
+                        (ds, dup.get("applied_at"), dup.get("applied_at"), kept_id),
+                    )
+                    cur.execute(
+                        "INSERT INTO status_log (job_id, old_status, new_status, source) VALUES (%s,%s,%s,%s)",
+                        (kept_id, ks, ds, "merge"),
+                    )
+                cur.execute(
+                    "UPDATE jobs SET current_status = 'rejected', rejection_reason = 'duplicate' WHERE id = %s",
+                    (dup_id,),
+                )
+                cur.execute(
+                    "INSERT INTO status_log (job_id, old_status, new_status, source) VALUES (%s,%s,%s,%s)",
+                    (dup_id, ds, "rejected", "merge"),
+                )
+                cur.execute(
+                    "INSERT INTO job_comments (job_id, body) VALUES (%s, %s)",
+                    (kept_id, f"Merged duplicate card #{dup_id} ({dup.get('source') or 'unknown source'}) into this one"),
+                )
+    finally:
+        conn.close()
+    logger.info(f"Merged duplicate: #{dup_id} -> #{kept_id}")
+    return {"kept_id": kept_id, "dup_id": dup_id}
+
+
 EDITABLE_JOB_FIELDS = (
     "title", "company", "url", "apply_url", "source", "salary", "location", "description",
 )

@@ -68,6 +68,12 @@
       {% if job.current_status == 'rejected' %}
         <button type="button" class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status" hx-vals='{"new_status": "{{ job.rejected_from or "found" }}"}' hx-swap="none" hx-on::after-request="if(event.detail.successful) location.reload()">Restore → {{ status_labels.get(job.rejected_from, "Found") }}</button>
       {% else %}
+        <form style="display:inline-flex;gap:6px;align-items:center;margin:0" hx-post="/jobs/{{ job.id }}/merge-into" hx-swap="none"
+              hx-on::after-request="if(!event.detail.successful){var d='error';try{d=JSON.parse(event.detail.xhr.responseText).detail}catch(e){};window.showToast && window.showToast('Merge failed: '+d)}"
+              title="This card is a duplicate — enter the number of the card to keep">
+          <input class="input" name="target_id" placeholder="#original" required style="width:92px;font-size:12px;padding:4px 8px">
+          <button type="submit" class="btn btn-ghost" style="font-size:12px">Merge dup</button>
+        </form>
         <button type="button" class="btn btn-secondary" hx-get="/jobs/{{ job.id }}/reject-form" hx-target="#reject-modal-slot" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){var d=document.getElementById('job-detail-dialog');if(d)d.remove();}">Reject…</button>
         {% if next_status %}<button type="button" class="btn btn-primary" hx-post="/jobs/{{ job.id }}/status" hx-vals='{"new_status": "{{ next_status }}"}' hx-swap="none" hx-on::after-request="if(event.detail.successful) location.reload()">Advance → {{ status_labels.get(next_status, next_status) }}</button>{% endif %}
       {% endif %}

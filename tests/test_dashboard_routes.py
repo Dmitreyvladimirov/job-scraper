@@ -451,6 +451,34 @@ def test_applied_today_modal_renders():
     assert "applied-today-dialog" in r.text
 
 
+# --- Merge duplicates (2026-08-19) ---
+
+def test_merge_rejects_no_cookie():
+    assert _anon_client().post("/jobs/1/merge-into", data={"target_id": "2"}).status_code == 403
+
+
+def test_merge_non_numeric_target_400():
+    r = _authenticated_client().post("/jobs/1/merge-into", data={"target_id": "abc"})
+    assert r.status_code == 400
+
+
+def test_merge_validation_error_400(monkeypatch):
+    def _raise(kept, dup):
+        raise ValueError("A card cannot be merged into itself")
+    monkeypatch.setattr(dashboard.db, "merge_duplicate", _raise)
+    r = _authenticated_client().post("/jobs/5/merge-into", data={"target_id": "#5"})
+    assert r.status_code == 400
+    assert "itself" in r.json()["detail"]
+
+
+def test_merge_success_returns_toast(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "merge_duplicate",
+                        lambda kept, dup: {"kept_id": kept, "dup_id": dup})
+    r = _authenticated_client().post("/jobs/7/merge-into", data={"target_id": "#3"})
+    assert r.status_code == 200
+    assert "merged into #3" in r.text
+
+
 # --- Card editing (2026-08-19) ---
 
 def test_edit_form_rejects_no_cookie():
