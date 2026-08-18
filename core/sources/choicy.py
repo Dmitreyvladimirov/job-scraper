@@ -58,7 +58,10 @@ def fetch() -> list[dict]:
 
     jobs = []
     for item in rows:
-        description = (item.get("Description") or "").strip()
+        # Bubble text fields can carry NUL bytes (seen live 2026-08-18 on the
+        # Афиша posting) — Postgres TEXT rejects them, so strip at the source too
+        # (db.log_job also guards, but clean data beats relying on the guard).
+        description = (item.get("Description") or "").replace("\x00", "").strip()
         if not description:
             continue  # nothing for the scorer to work with
 

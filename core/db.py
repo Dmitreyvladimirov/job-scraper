@@ -248,6 +248,17 @@ def log_job(
 
     pipeline_run_id/scoring_source/shadow_* are the cloud-scoring additions
     (USE_CLOUD_SCORING) — same optional/backward-compatible shape."""
+
+    def _no_nul(value):
+        # Postgres TEXT cannot hold NUL (0x00) and psycopg2 raises before the
+        # INSERT even runs — one dirty scraped description then kills the whole
+        # run (live crash 2026-08-18, a Choicy posting). Strip rather than reject:
+        # the byte carries no meaning in job text.
+        return value.replace("\x00", "") if isinstance(value, str) else value
+
+    job = {k: _no_nul(v) for k, v in job.items()}
+    why_not, why_apply, penalty_reason, location_reason = (
+        _no_nul(why_not), _no_nul(why_apply), _no_nul(penalty_reason), _no_nul(location_reason))
     desc = (job.get("description") or "")[:8000]
     salary = job.get("salary") or None
     location = job.get("location") or None
