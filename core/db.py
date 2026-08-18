@@ -500,6 +500,48 @@ def get_applied_today() -> list[dict]:
         conn.close()
 
 
+EDITABLE_JOB_FIELDS = (
+    "title", "company", "url", "apply_url", "source", "salary", "location", "description",
+)
+
+
+def update_job_fields(job_id: int, fields: dict) -> None:
+    """Card editing (2026-08-19): whitelist-only content fields. Computed columns
+    (scores, status, resume_run_id) are deliberately not reachable here — they have
+    their own flows. NUL bytes stripped like log_job() does."""
+    updates = {k: v for k, v in fields.items() if k in EDITABLE_JOB_FIELDS}
+    if not updates:
+        return
+    for k, v in updates.items():
+        if isinstance(v, str):
+            updates[k] = v.replace("\x00", "")
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE jobs SET {set_clause} WHERE id = %s",
+                    (*updates.values(), job_id),
+                )
+    finally:
+        conn.close()
+    logger.info(f"Card edited: job={job_id} fields={sorted(updates)}")
+
+
+def clear_resume_run_id(job_id: int) -> None:
+    """Unlink a generated resume from the card (the artifact row stays) — used when
+    the JD is edited: a resume tailored to the old text should not present itself
+    as current."""
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE jobs SET resume_run_id = NULL WHERE id = %s", (job_id,))
+    finally:
+        conn.close()
+
+
 def get_resume_flags(resume_run_id: int) -> dict | None:
     """Post-repair Skeptic findings + the pre-repair count for the flags dialog
     ('было 11 → стало 2'). before_count equals the findings length for runs

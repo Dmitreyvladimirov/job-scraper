@@ -451,6 +451,62 @@ def test_applied_today_modal_renders():
     assert "applied-today-dialog" in r.text
 
 
+# --- Card editing (2026-08-19) ---
+
+def test_edit_form_rejects_no_cookie():
+    assert _anon_client().get("/jobs/1/edit-form").status_code == 403
+    assert _anon_client().post("/jobs/1/edit", data={"title": "x"}).status_code == 403
+
+
+def test_edit_unknown_job_404(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: None)
+    assert _authenticated_client().post("/jobs/1/edit", data={"title": "x"}).status_code == 404
+
+
+def test_edit_empty_title_400(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job())
+    r = _authenticated_client().post("/jobs/1/edit", data={"title": "   "})
+    assert r.status_code == 400
+
+
+def test_edit_saves_fields_and_rescores_on_jd_change(monkeypatch):
+    saved = {}
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job(resume_run_id=9))
+    monkeypatch.setattr(dashboard.db, "update_job_fields",
+                        lambda job_id, fields: saved.update(fields))
+    cleared = []
+    monkeypatch.setattr(dashboard.db, "clear_resume_run_id", lambda job_id: cleared.append(job_id))
+    rescored = []
+    monkeypatch.setattr(dashboard.threading, "Thread",
+                        lambda target, args, daemon: type("T", (), {"start": lambda self: rescored.append(args)})())
+    monkeypatch.setattr(dashboard.db, "get_comments", lambda _id: [])
+    monkeypatch.setattr(dashboard.db, "get_resume_skeptic_count", lambda _id: 0)
+
+    r = _authenticated_client().post("/jobs/1/edit", data={
+        "title": "PM", "company": "Acme", "description": "y" * 500, "url": "https://x.example/a",
+    })
+    assert r.status_code == 200
+    assert saved["description"] == "y" * 500
+    assert saved["apply_url"] == "https://x.example/a"  # falls back to url when blank
+    assert cleared == [1]      # JD changed -> old resume unlinked
+    assert len(rescored) == 1  # background re-score scheduled
+    assert "job-detail-dialog" in r.text  # refreshed view mode returned
+
+
+def test_edit_no_jd_change_keeps_resume(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_job", lambda _id: _fake_job(resume_run_id=9))
+    monkeypatch.setattr(dashboard.db, "update_job_fields", lambda job_id, fields: None)
+    cleared = []
+    monkeypatch.setattr(dashboard.db, "clear_resume_run_id", lambda job_id: cleared.append(job_id))
+    monkeypatch.setattr(dashboard.db, "get_comments", lambda _id: [])
+    monkeypatch.setattr(dashboard.db, "get_resume_skeptic_count", lambda _id: 0)
+    r = _authenticated_client().post("/jobs/1/edit", data={
+        "title": "PM", "company": "Acme", "description": "x" * 500, "salary": "$200k",
+    })
+    assert r.status_code == 200
+    assert cleared == []  # same JD -> resume link untouched
+
+
 def test_bulk_reject_form_for_real_jobs():
     conn = dashboard.psycopg2.connect(
         dashboard.DATABASE_URL, cursor_factory=dashboard.psycopg2.extras.RealDictCursor, connect_timeout=10

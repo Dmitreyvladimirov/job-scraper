@@ -6,6 +6,8 @@
         <div style="font-family:var(--font-heading);font-weight:600;font-size:24px;line-height:1.2">{{ job.title }}</div>
       </div>
       <div style="text-align:center;flex:none"><div style="font-family:var(--font-heading);font-size:38px;line-height:1;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ job.ats_score if job.ats_score is not none else '—' }}</div><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600)">ATS</div></div>
+      <button type="button" class="btn btn-icon btn-ghost" aria-label="Edit card" title="Edit card" style="margin:-4px 0 0 0"
+              hx-get="/jobs/{{ job.id }}/edit-form" hx-target="#detail-modal-slot" hx-swap="innerHTML"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg></button>
       <button type="button" class="btn btn-icon btn-ghost" aria-label="Close" style="margin:-4px -6px 0 0" onclick="document.getElementById('job-detail-dialog').remove()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
     </div>
 

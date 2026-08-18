@@ -462,6 +462,79 @@ def job_detail(request: Request, job_id: int):
     })
 
 
+@app.get("/jobs/{job_id}/edit-form", response_class=HTMLResponse)
+def edit_job_form(request: Request, job_id: int):
+    _authenticate(request)
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown job id")
+    return templates.TemplateResponse(request, "partials/edit_job_form.html", {"job": job})
+
+
+@app.post("/jobs/{job_id}/edit", response_class=HTMLResponse)
+def edit_job(
+    request: Request,
+    job_id: int,
+    title: str = Form(...),
+    company: str = Form(default=""),
+    url: str = Form(default=""),
+    apply_url: str = Form(default=""),
+    source: str = Form(default=""),
+    salary: str = Form(default=""),
+    location: str = Form(default=""),
+    description: str = Form(default=""),
+):
+    """Save card edits (2026-08-19). Content fields only; on a scoring-relevant
+    change (title/company/JD) the card is re-scored in the background, and a
+    changed JD unlinks the previously generated resume (tailored to the old
+    text — the artifact itself stays in resume.artifact). Returns the refreshed
+    detail modal."""
+    _authenticate(request)
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown job id")
+    title = title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
+
+    fields = {
+        "title": title,
+        "company": company.strip() or None,
+        "url": url.strip() or None,
+        "apply_url": apply_url.strip() or url.strip() or None,
+        "source": source.strip() or None,
+        "salary": salary.strip() or None,
+        "location": location.strip() or None,
+        "description": description.strip() or None,
+    }
+    jd_changed = (fields["description"] or "") != (job.get("description") or "")
+    scoring_changed = jd_changed or fields["title"] != (job.get("title") or "") \
+        or (fields["company"] or "") != (job.get("company") or "")
+
+    db.update_job_fields(job_id, fields)
+    if jd_changed and job.get("resume_run_id"):
+        db.clear_resume_run_id(job_id)
+    if scoring_changed and (fields["description"] or "").strip():
+        threading.Thread(target=_rescore_job_async, args=(job_id,), daemon=True).start()
+
+    return job_detail(request, job_id)
+
+
+def _rescore_job_async(job_id: int) -> None:
+    """Background re-score after an edit — unlike _auto_score_job this runs even
+    when a score already exists (the edit made it stale)."""
+    try:
+        job = db.get_job(job_id)
+        if not job or not (job.get("description") or "").strip():
+            return
+        pipeline_run_id = f"dash-edit-{job_id}-{int(time.time())}"
+        result, _error_kind = scoring_client.analyze_via_cloud(job, pipeline_run_id)
+        if result is not None:
+            db.update_job_scoring(job_id, result, pipeline_run_id)
+    except Exception:
+        logger.exception(f"Re-score after edit failed for job {job_id}")
+
+
 @app.post("/jobs/{job_id}/comments", response_class=HTMLResponse)
 def add_comment(request: Request, job_id: int, body: str = Form(...)):
     _authenticate(request)
