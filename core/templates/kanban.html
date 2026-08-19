@@ -139,8 +139,9 @@
           <div style="font-size:11px;color:var(--color-neutral-700);padding-left:23px">{{ job.company or '—' }}</div>
           {% set tags = domain_tags(job.domain) %}
           {% if tags %}<div style="display:flex;flex-wrap:wrap;gap:4px;padding-left:23px">{% for t in tags %}<span class="{{ t.class }}" style="font-size:10.5px;padding:1px 7px;{{ t.style }}">{{ t.name }}</span>{% endfor %}</div>{% endif %}
-          <div class="card-meta" style="font-size:11px;font-feature-settings:'tnum';padding-left:23px">
+          <div class="card-meta" style="font-size:11px;font-feature-settings:'tnum';padding-left:23px;display:flex;gap:8px;flex-wrap:wrap">
             {% if job.logged_at %}<span>{{ job.logged_at|short_date }}</span>{% endif %}
+            {% if job.location %}<span style="color:var(--color-neutral-600)">{{ job.location|location_badge }}</span>{% endif %}
           </div>
         </div>
         {% endfor %}

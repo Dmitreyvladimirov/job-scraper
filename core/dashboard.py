@@ -102,6 +102,45 @@ def _short_date(value) -> str:
 
 templates.env.filters["short_date"] = _short_date
 
+
+# Country-name -> ISO code, inverted from the jobgether expansion map, plus the
+# names that appear in locations from other sources / the Notion import.
+from sources.jobgether import _ISO_COUNTRIES as _CODE_TO_NAME  # noqa: E402
+_NAME_TO_CODE = {v.lower(): k for k, v in _CODE_TO_NAME.items()}
+_NAME_TO_CODE.update({"united states": "US", "uk": "GB", "czech republic": "CZ",
+                      "the netherlands": "NL", "south korea": "KR", "hong kong": "HK"})
+
+
+def _flag(code: str) -> str:
+    return "".join(chr(0x1F1E6 + ord(c) - 65) for c in code.upper()) if len(code) == 2 else ""
+
+
+def _location_badge(location: str | None) -> str:
+    """Compact location for cards: flags + short label (2026-08-19, Dimitry's ask).
+    'Remote worldwide' -> '🌍 Remote'; 'Remote — China, India' -> '🇨🇳🇮🇳 Remote';
+    'Tel Aviv, Israel' -> '🇮🇱 Tel Aviv, Israel'; unknown text passes through."""
+    if not location:
+        return ""
+    loc = location.strip()
+    if loc.lower() in ("remote worldwide", "remote", "worldwide"):
+        return "🌍 Remote"
+    if loc.startswith("Remote — "):
+        parts = [p.strip() for p in loc[len("Remote — "):].split(",")]
+        flags = [_flag(_NAME_TO_CODE.get(p.lower(), p if len(p) == 2 else "")) for p in parts]
+        flags = [f for f in flags if f]
+        shown = "".join(flags[:3]) + (f" +{len(flags) - 3}" if len(flags) > 3 else "")
+        return (shown + " Remote").strip() if shown else loc
+    code = _NAME_TO_CODE.get(loc.lower())
+    if code:
+        return f"{_flag(code)} {loc}"
+    for name, code in _NAME_TO_CODE.items():
+        if name in loc.lower():
+            return f"{_flag(code)} {loc}"
+    return loc
+
+
+templates.env.filters["location_badge"] = _location_badge
+
 STATUS_LABELS = {
     "found": "Found", "applied": "Applied", "recruiter_reply": "Recruiter reply",
     "screen": "Screen", "interview": "Interview", "offer": "Offer", "rejected": "Rejected",

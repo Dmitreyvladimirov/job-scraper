@@ -11,6 +11,7 @@
       </div>
       <div style="display:flex;align-items:center;gap:14px;margin-top:4px;font-size:12px;color:var(--color-neutral-600);flex-wrap:wrap">
         <span>{{ job.source }}</span>
+        {% if job.location %}<span>{{ job.location|location_badge }}</span>{% endif %}
         {% for t in domain_tags(job.domain) %}<span class="{{ t.class }}" style="font-size:10.5px;padding:1px 7px;{{ t.style }}">{{ t.name }}</span>{% endfor %}
         {% if job.role_score is none %}
           <span style="font-style:italic;color:var(--color-neutral-500)">No breakdown or keywords recorded for this vacancy</span>

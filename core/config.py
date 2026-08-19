@@ -143,6 +143,7 @@ REJECTION_REASONS = [
     "dislike_company",
     "prior_bad_interview",
     "company_rejected",
+    "no_response",
     "duplicate",
     "old",
     "geo_restricted_auto",
@@ -162,6 +163,9 @@ REJECTION_REASON_LABELS = {
     # selection stage (added 2026-08-17). The kanban already records WHICH stage via
     # status_log's rejected-from tracking; this reason records WHY the card died.
     "company_rejected": "Company rejected — not advanced",
+    # Ghosting is not the same failure as an explicit rejection after interviews —
+    # split for honest funnel analytics (2026-08-19, Notion wave import).
+    "no_response": "No response after applying",
     # Set by the merge-duplicate action (2026-08-19) and selectable manually: two
     # live cards turned out to be the same vacancy; this one is the twin.
     "duplicate": "Duplicate card",
