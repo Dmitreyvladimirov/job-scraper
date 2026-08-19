@@ -63,10 +63,13 @@ RESUME_AUTOGEN_MIN_JD_CHARS = 500
 RESUME_AUTOGEN_CAP_PER_RUN = 5
 
 # Phase 4 (2026-08-19): the single storage truncation limit for job descriptions.
-# db.log_job() had its own hardcoded 8000; the cloud scorer receives the full text
-# BEFORE this truncation and applies its own prompt-side limit — this constant only
-# bounds what Postgres keeps.
-DESCRIPTION_MAX_CHARS = 8000
+# The cloud scorer receives the full text BEFORE this truncation and applies its
+# own prompt-side limit — this constant only bounds what Postgres keeps (and thus
+# what Re-score / resume generation read back). Raised 8000 -> 20000 the same day:
+# 6.9% of JDs (127 qualified in 30 days) were hitting the old cap, which was a
+# token-cost guard for the retired local scorer, not a storage concern. 20000
+# still guards against pathological scraped pages.
+DESCRIPTION_MAX_CHARS = 20000
 MAX_GPT_CALLS_PER_RUN = 40  # cap LLM calls per run to control costs
 MAX_JOB_AGE_DAYS = 14       # skip vacancies older than this; 0 = disabled
 
