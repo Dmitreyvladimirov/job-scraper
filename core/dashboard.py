@@ -497,6 +497,7 @@ def job_detail(request: Request, job_id: int):
     return templates.TemplateResponse(request, "partials/job_detail_modal.html", {
         "job": job, "next_status": next_status, "status_labels": STATUS_LABELS,
         "job_id": job_id, "comments": db.get_comments(job_id),
+        "company_history": db.get_company_history(job.get("company"), job_id),
         **_resume_slot_context(job),
     })
 

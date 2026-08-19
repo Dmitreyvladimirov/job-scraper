@@ -59,6 +59,19 @@
     <p style="font-style:italic;color:var(--color-neutral-600);font-size:13px">No breakdown or keywords recorded for this vacancy.</p>
     {% endif %}
 
+    {% if company_history %}
+    <div style="border-top:1px solid var(--color-divider);margin-top:12px;padding-top:10px">
+      <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:6px">⚠️ History with {{ job.company }}</div>
+      {% for h in company_history %}
+      <div style="display:flex;gap:8px;align-items:baseline;font-size:12.5px;margin-bottom:3px">
+        <a href="/kanban?job={{ h.id }}" style="color:inherit;flex:1">{{ h.title }}</a>
+        <span style="color:var(--color-neutral-600);white-space:nowrap">{{ status_labels.get(h.current_status, h.current_status) }}{% if h.rejection_reason %} — {{ h.rejection_reason }}{% endif %}</span>
+        <span style="color:var(--color-neutral-600);font-feature-settings:'tnum';white-space:nowrap">{{ h.at|short_date }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     {% include 'partials/comments_block.html' %}
 
     <div class="dialog-actions" style="margin-top:6px">

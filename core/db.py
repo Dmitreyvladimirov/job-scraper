@@ -701,7 +701,7 @@ def clear_resume_run_id(job_id: int) -> None:
         conn.close()
 
 
-def get_autogen_candidates(min_score: int, min_jd_chars: int, limit: int) -> list[dict]:
+def get_autogen_candidates(min_score: int, min_jd_chars: int, limit: int, cooldown_days: int = 180) -> list[dict]:
     """Release 2 (2026-08-19): cards eligible for end-of-run resume auto-generation.
     Only review-queue cards ('found' — applied cards already got their resume through
     the apply flow), scored by the CLOUD scorer (local scores are on a different,
@@ -721,9 +721,45 @@ def get_autogen_candidates(min_score: int, min_jd_chars: int, limit: int) -> lis
                      AND length(coalesce(description, '')) >= %s
                      AND coalesce(trim(company), '') != ''
                      AND resume_run_id IS NULL
+                     -- Company-rejection cooldown (2026-08-19, the Payoneer case):
+                     -- an engaged rejection within the window mutes automatic
+                     -- resume spend for that company's new postings. Manual
+                     -- Generate stays available.
+                     AND NOT EXISTS (
+                         SELECT 1 FROM jobs r
+                         WHERE lower(trim(r.company)) = lower(trim(jobs.company))
+                           AND r.rejection_reason IN ('company_rejected', 'prior_bad_interview')
+                           AND coalesce(r.applied_at, r.logged_at) > now() - make_interval(days => %s)
+                     )
                    ORDER BY ats_score DESC, id DESC
                    LIMIT %s""",
-                (min_score, min_jd_chars, limit),
+                (min_score, min_jd_chars, cooldown_days, limit),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_company_history(company: str | None, exclude_job_id: int) -> list[dict]:
+    """Prior cards of the same company (case-insensitive), newest first — the
+    modal's 'history with this company' block (2026-08-19, the Payoneer case).
+    Only cards that went anywhere (applied+ or rejected); plain found/filtered
+    rows are noise here."""
+    if not (company or "").strip():
+        return []
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, title, current_status, rejection_reason,
+                          coalesce(applied_at, logged_at) AS at
+                   FROM jobs
+                   WHERE lower(trim(company)) = lower(trim(%s)) AND id != %s
+                     AND (current_status IN ('applied','recruiter_reply','screen','interview','offer')
+                          OR (current_status = 'rejected' AND applied_at IS NOT NULL)
+                          OR rejection_reason IN ('company_rejected','prior_bad_interview','no_response'))
+                   ORDER BY coalesce(applied_at, logged_at) DESC LIMIT 5""",
+                (company, exclude_job_id),
             )
             return [dict(r) for r in cur.fetchall()]
     finally:

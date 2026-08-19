@@ -20,6 +20,7 @@ from sources import choicy, company_direct, jobicy, telegram_channels, jobgether
 from config import (
     ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, USE_CLOUD_SCORING,
     RESUME_AUTOGEN_MIN_SCORE, RESUME_AUTOGEN_MIN_JD_CHARS, RESUME_AUTOGEN_CAP_PER_RUN,
+    COMPANY_REJECTION_COOLDOWN_DAYS,
     validate_secrets,
 )
 from utils import strip_html, enrich_url, normalize_job_key, fetch_jd_from_url, fetch_url_generic
@@ -350,7 +351,9 @@ def autogen_resumes() -> int:
     just skip the card; resume_run_id stays NULL, so the next run retries it."""
     try:
         candidates = db.get_autogen_candidates(
-            RESUME_AUTOGEN_MIN_SCORE, RESUME_AUTOGEN_MIN_JD_CHARS, RESUME_AUTOGEN_CAP_PER_RUN)
+            RESUME_AUTOGEN_MIN_SCORE, RESUME_AUTOGEN_MIN_JD_CHARS, RESUME_AUTOGEN_CAP_PER_RUN,
+    COMPANY_REJECTION_COOLDOWN_DAYS,
+            cooldown_days=COMPANY_REJECTION_COOLDOWN_DAYS)
     except Exception as e:
         logger.error(f"Resume autogen: candidate query failed: {e}")
         return 0

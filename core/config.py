@@ -61,6 +61,12 @@ COMPANY_COOLDOWN_DAYS = 90  # warn if applied to same company within this period
 RESUME_AUTOGEN_MIN_SCORE = 80
 RESUME_AUTOGEN_MIN_JD_CHARS = 500
 RESUME_AUTOGEN_CAP_PER_RUN = 5
+# A company that REJECTED Dimitry after engaging (company_rejected /
+# prior_bad_interview) within this window gets no automatic resume spend for its
+# new postings — cards still get scored and queued, the Generate button still
+# works; only the automatic batch skips them (Dimitry, 2026-08-19, the Payoneer
+# case: rejected at HM stage in March, 4 new postings polled in August).
+COMPANY_REJECTION_COOLDOWN_DAYS = 180
 
 # Phase 4 (2026-08-19): the single storage truncation limit for job descriptions.
 # The cloud scorer receives the full text BEFORE this truncation and applies its
