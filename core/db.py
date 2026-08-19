@@ -580,7 +580,10 @@ def record_target_company_results(results: list[dict]) -> None:
 def degrade_target_companies(threshold: int = 6) -> list[dict]:
     """Auto-degrade companies that failed `threshold` consecutive polls to 'dormant'
     (~1.5 days at 4 runs/day). Returns the degraded rows for the caller's single
-    aggregated Telegram alert. Rows are never deleted; recovery is manual."""
+    aggregated Telegram alert. Rows are never deleted; recovery is manual.
+    Note: zero_streak (successful polls returning 0 postings) is recorded but does
+    NOT drive degradation — an empty board can be the truth for a small company;
+    it's telemetry for the 2-month signal review, not a trigger."""
     conn = _conn()
     try:
         with conn:

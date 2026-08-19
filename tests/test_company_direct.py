@@ -136,5 +136,40 @@ def test_time_budget_defers_tail(monkeypatch):
 
     monkeypatch.setattr(company_direct.time, "monotonic", fake_monotonic)
     jobs = company_direct.fetch()
-    assert len(jobs) < 3          # tail deferred
-    assert len(recorded["results"]) == len(jobs)  # deferred companies not marked checked
+    assert len(jobs) < 3                       # tail deferred
+    assert len(recorded["results"]) < 3        # deferred companies not marked checked
+    polled_ids = [r["id"] for r in recorded["results"]]
+    assert polled_ids == sorted(polled_ids)    # prefix of the ordered list, no skips
+
+
+def test_unknown_ats_value_recorded_not_raised(monkeypatch):
+    # Against the REAL LISTERS dict (QA gap): a DB row with ats='comeet' must be
+    # caught as a failed poll, never raise into scraper.run().
+    recorded = {}
+    monkeypatch.setattr(company_direct.db, "get_active_target_companies",
+                        lambda: [{"id": 9, "name": "X", "ats": "comeet", "slug": "x"}])
+    monkeypatch.setattr(company_direct.db, "record_target_company_results",
+                        lambda results: recorded.setdefault("results", results))
+    monkeypatch.setattr(company_direct.db, "degrade_target_companies", lambda threshold=6: [])
+    monkeypatch.setattr(company_direct.telegram, "send_error",
+                        lambda msg: recorded.setdefault("alerts", []).append(msg))
+    jobs = company_direct.fetch()
+    assert jobs == []
+    assert recorded["results"][0]["ok"] is False
+
+
+def test_body_failure_after_listing_records_single_error_entry(monkeypatch):
+    # The whole per-company body is guarded; a crash in job-mapping must produce
+    # exactly ONE health entry (ok=False), not an ok+error pair.
+    recorded = {}
+    _install(monkeypatch, [_company(1)], {
+        "greenhouse": lambda slug, timeout: [_posting("Product Manager")],
+    }, recorded)
+
+    def boom(company, postings, deadline):
+        raise RuntimeError("mapping broke")
+
+    monkeypatch.setattr(company_direct, "_to_source_jobs", boom)
+    assert company_direct.fetch() == []
+    assert len(recorded["results"]) == 1
+    assert recorded["results"][0]["ok"] is False

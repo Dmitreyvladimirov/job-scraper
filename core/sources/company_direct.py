@@ -37,11 +37,19 @@ TIME_BUDGET_SEC = 240
 DEGRADE_AFTER_FAILURES = 6
 
 
-def _to_source_jobs(company: dict, postings: list[dict]) -> list[dict]:
+def _to_source_jobs(company: dict, postings: list[dict], deadline: float) -> list[dict]:
+    """deadline is time.monotonic()-based: per-posting Greenhouse description
+    fetches (10s timeout each) must also respect the run's time budget (QA
+    review 2026-08-19) — a board with many PM matches could otherwise stretch
+    one loop iteration by tens of seconds between budget checks. Dropping the
+    tail is safe: the board is re-listed from scratch every run."""
     jobs = []
     for p in postings:
         if not filters.passes_role_filter({"title": p["title"]}):
             continue
+        if time.monotonic() > deadline:
+            logger.warning(f"CompanyDirect: {company['name']} — budget hit mid-board, remaining postings deferred")
+            break
         description = p["description"] or ats_boards.fetch_description(
             company["ats"], company["slug"], p["id"], timeout=REQUEST_TIMEOUT)
         jobs.append({
@@ -81,22 +89,27 @@ def fetch() -> list[dict]:
             break
         if i:
             time.sleep(CRAWL_DELAY_SEC)
+        # The WHOLE per-company body is guarded (QA review 2026-08-19): fetch()
+        # is evaluated while building sources_data, BEFORE start_run() — an
+        # uncaught exception here would kill the entire run for all sources.
+        # _to_source_jobs/fetch_description are internally safe today, but this
+        # boundary must not depend on callees staying that way.
         try:
             postings = ats_boards.LISTERS[company["ats"]](
                 company["slug"], timeout=REQUEST_TIMEOUT)
+            matched = _to_source_jobs(company, postings, started + TIME_BUDGET_SEC)
+            # ok is recorded only after the full body succeeded — otherwise a
+            # failure mid-body would append a second, contradicting entry.
+            results.append({"id": company["id"], "ok": True, "posting_count": len(postings)})
+            if postings:
+                logger.info(
+                    f"CompanyDirect: {company['name']} — {len(postings)} postings, "
+                    f"{len(matched)} PM-matched")
+            jobs.extend(matched)
         except ats_boards.AtsBoardNotFound:
             results.append({"id": company["id"], "ok": False, "error": "not_found"})
-            continue
         except Exception as e:
             results.append({"id": company["id"], "ok": False, "error": str(e)[:200]})
-            continue
-        results.append({"id": company["id"], "ok": True, "posting_count": len(postings)})
-        matched = _to_source_jobs(company, postings)
-        if postings:
-            logger.info(
-                f"CompanyDirect: {company['name']} — {len(postings)} postings, "
-                f"{len(matched)} PM-matched")
-        jobs.extend(matched)
 
     _record_health(results, polled=len(results), total=len(companies))
     logger.info(f"CompanyDirect: fetched {len(jobs)} jobs from {len(results)} boards")
