@@ -18,6 +18,12 @@ _BLOCKED_STOPWORDS = {
     "cette", "aussi", "comme", "dont", "donc", "leurs",
     # Dutch
     "zijn", "worden", "heeft", "kunnen", "maar", "jouw", "onze", "naar",
+    # Portuguese (Phase 4, 2026-08-19 — invisible to the location axis per the
+    # shadow-scoring analysis). Only words NOT shared with allowed Spanish:
+    "não", "você", "são", "gestão", "experiência", "área", "então", "português",
+    "conhecimentos", "equipe", "vaga", "benefícios",
+    # Uzbek (Latin script), same Phase 4 finding:
+    "uchun", "hamda", "ishlash", "malaka", "lavozim", "talablar", "bo'lish",
 }
 
 
@@ -40,8 +46,11 @@ def passes_language_filter(job: dict) -> bool:
     if _DE_MARKERS.search(combined):
         return False
 
-    # Soft block: 3+ distinctive non-English stop words
-    words = set(re.findall(r"\b[a-z]+\b", combined.lower()))
+    # Soft block: 3+ distinctive non-English stop words. The word pattern accepts
+    # accented Latin letters and the Uzbek apostrophe — the old \b[a-z]+\b silently
+    # dropped every accented word, which is why Portuguese sailed through (its most
+    # distinctive stopwords are exactly the accented ones: não/você/gestão).
+    words = set(re.findall(r"[a-zà-ÿ]+(?:'[a-z]+)?", combined.lower()))
     return sum(1 for w in words if w in _BLOCKED_STOPWORDS) < 3
 
 

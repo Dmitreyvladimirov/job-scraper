@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import psycopg2
 import psycopg2.extras
-from config import CURRENT_STATUSES, FUNNEL_ORDER
+from config import CURRENT_STATUSES, DESCRIPTION_MAX_CHARS, FUNNEL_ORDER
 from utils import normalize_job_key
 
 logger = logging.getLogger(__name__)
@@ -259,7 +259,7 @@ def log_job(
     job = {k: _no_nul(v) for k, v in job.items()}
     why_not, why_apply, penalty_reason, location_reason = (
         _no_nul(why_not), _no_nul(why_apply), _no_nul(penalty_reason), _no_nul(location_reason))
-    desc = (job.get("description") or "")[:8000]
+    desc = (job.get("description") or "")[:DESCRIPTION_MAX_CHARS]
     salary = job.get("salary") or None
     location = job.get("location") or None
     # Only 'qualified' jobs enter the review funnel — every other outcome (role/language/

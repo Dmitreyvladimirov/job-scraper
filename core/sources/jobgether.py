@@ -37,6 +37,16 @@ _HEADERS = {
 CRAWL_DELAY_SEC = 2
 
 
+def clean_description(raw_html: str) -> str:
+    """Drop the boilerplate opening paragraph ("This a Full Remote job, the offer
+    is available from: Texas (USA)") that every offer carries — it poisons the
+    scorer's location axis in both directions (Phase 4; 311/312 recent JDs had it,
+    per the 2026-08-14 label comparison). The real geo signal is parsed cleanly
+    from applicantLocationRequirements into `location`, so this paragraph is pure
+    noise. Cut at the tag boundary, first occurrence only, and only at the start."""
+    return re.sub(r"^\s*<p>\s*This a Full Remote job[^<]*</p>\s*", "", raw_html, count=1)
+
+
 def _fetch_page(url: str) -> str | None:
     try:
         resp = retry(lambda: requests.get(url, headers=_HEADERS, timeout=15))
@@ -125,7 +135,7 @@ def fetch() -> list[dict]:
 
         title = posting.get("title", "")
         company = (posting.get("hiringOrganization") or {}).get("name", "")
-        description = strip_html(posting.get("description", ""))
+        description = strip_html(clean_description(posting.get("description", "")))
         # datePosted is a full JS Date string ("Fri Jul 03 2026 ..."), not ISO —
         # re-parse into YYYY-MM-DD when possible, else leave blank.
         raw_date = posting.get("datePosted", "")

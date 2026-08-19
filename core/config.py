@@ -61,6 +61,12 @@ COMPANY_COOLDOWN_DAYS = 90  # warn if applied to same company within this period
 RESUME_AUTOGEN_MIN_SCORE = 80
 RESUME_AUTOGEN_MIN_JD_CHARS = 500
 RESUME_AUTOGEN_CAP_PER_RUN = 5
+
+# Phase 4 (2026-08-19): the single storage truncation limit for job descriptions.
+# db.log_job() had its own hardcoded 8000; the cloud scorer receives the full text
+# BEFORE this truncation and applies its own prompt-side limit — this constant only
+# bounds what Postgres keeps.
+DESCRIPTION_MAX_CHARS = 8000
 MAX_GPT_CALLS_PER_RUN = 40  # cap LLM calls per run to control costs
 MAX_JOB_AGE_DAYS = 14       # skip vacancies older than this; 0 = disabled
 
