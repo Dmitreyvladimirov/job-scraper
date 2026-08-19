@@ -128,14 +128,22 @@ Telegram-сообщением (переживает early-return сводки п
   разовый июньский импорт старого Notion-трекера (прогон #8), не живая утечка.
   Бэкфилл source='NotionImport', import_notion_csv.py починен. Процентам по
   источникам в SOURCES_DECISION.md теперь можно доверять без оговорок.
-- **`sources/company_direct.py` - прямые опросы целевых компаний.** Крупнейшая
-  незакрытая фича. Greenhouse/Lever/Ashby/join.com по списку ~80 компаний
-  (EdTech/LMS + израильские). Три слоя по частоте: Слой 1 (~33 израильские + 8
-  глобальных, 4x/день + instant Telegram-алерт при score >=60), Слой 2 (~25-30
-  средних глобальных, 1x/день), Слой 3 (fallback). Таблица `target_companies`
-  в Postgres, weekly discovery пишет кандидатов только в `pending`. Через 2
-  месяца замерить сигнал: <3 лида/месяц = список не тот. [ROADMAP.md
-  "Высокий приоритет #1", tasks.md TASK-007..011, requirements.md REQ-107..110]
+- **`sources/company_direct.py` - СДЕЛАН (MVP) 2026-08-19.** Полный агентный
+  пайплайн: продакт (скоуп/ребаланс списка) -> решения Дмитрия (дополнить старый
+  список AI-компаниями; instant-алерт позже; обновление по событию) -> архитектор
+  -> имплементация -> QA (2 раунда фиксов). Что в проде: core/ats_boards.py
+  (list_* по трём ATS, фикстуры с живых бордов), таблица target_companies
+  (health-колонки, авто-dormant после 6 отказов, строки не удаляются),
+  seed 73 компании (35 израильских реконструированы - исходный research-док
+  утерян; сетевая верификация: 27 ok / 42 not_found - половина целей на
+  Comeet/Workday), 12 Layer-1 бордов активны (Lightricks, Riskified, Fireblocks,
+  Melio, Similarweb, Taboola, Yotpo, Payoneer, Optimove, Bringg, D2L, Litmos).
+  PM-предфильтр в источнике, published='' намеренно, бюджет 240с, источник
+  последним в sources_data. Метрика 2-мес. чекпоинта (продакт): >=3 net-new
+  qualified/мес, которых не нашёл ни один другой источник. Дальше по сигналу:
+  Layer 2 (15 верифицированных pending: Anthropic, OpenAI, PhotoRoom, Cohere...),
+  разбор 42 not_found через --probe-all, instant-алерт. Kill-switch: перевести
+  строки в pending (тумблер Sources на прогон не влияет - существующий долг).
 - **Удалить код 5 отключённых агрегаторов** (`core/sources/himalayas.py`,
   `remotive.py`, `remoteok.py`, `arbeitnow.py`, `weworkremotely.py`). Отключены,
   но файлы на месте - лишняя maintenance surface. [SOURCES_DECISION.md п.5]
