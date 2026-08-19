@@ -132,3 +132,16 @@ def test_slug_variants_are_tried_in_order(monkeypatch):
     url = utils.find_apply_url("Acme Inc", "Senior Product Manager, Platform")
     assert url == "https://boards.greenhouse.io/acme/jobs/123"
     assert any("acme-inc" in c for c in router.calls)  # earlier variant was tried first
+
+
+def test_enrich_url_never_overwrites_source_supplied_apply_url(monkeypatch):
+    # Jobgether ships its own authoritative applyUrl; the weak title-matcher must
+    # not replace it (live bug: cards pointed at the wrong position of the right
+    # company — Deliveroo/Smartsheet/Vanta, 2026-08-19).
+    called = []
+    monkeypatch.setattr(utils, "find_apply_url", lambda c, t: called.append(1) or "https://wrong")
+    job = {"url": "https://jobgether.com/offer/abc", "company": "Vanta",
+           "title": "Senior PM", "apply_url": "https://jobs.ashbyhq.com/vanta/right-id/application"}
+    utils.enrich_url(job)
+    assert job["apply_url"] == "https://jobs.ashbyhq.com/vanta/right-id/application"
+    assert called == []  # matcher not even consulted

@@ -378,6 +378,14 @@ def enrich_url(job: dict) -> None:
     """If job URL is a job-platform page, try to find the company's direct apply URL."""
     url = job.get("url", "")
 
+    # A source that already supplied a direct apply link (Jobgether pages embed
+    # their own applyUrl since 2026-08-19) must win: find_apply_url() matches by
+    # a weak 2-word title overlap and can land on a DIFFERENT position at the
+    # same company (live bug: Deliveroo/Smartsheet/Vanta cards pointed at the
+    # wrong postings).
+    if job.get("apply_url") and job["apply_url"] != url:
+        return
+
     if _url_host_matches(url, _DIRECT_ANCHOR_HOSTS):
         direct = _extract_direct_anchor(url)
         if direct:

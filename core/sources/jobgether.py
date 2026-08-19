@@ -15,6 +15,7 @@ import logging
 import re
 import time
 from datetime import datetime
+from html import unescape
 
 import requests
 from bs4 import BeautifulSoup
@@ -35,6 +36,54 @@ _HEADERS = {
 }
 
 CRAWL_DELAY_SEC = 2
+
+
+_APPLY_URL_RE = re.compile(r'applyUrl":"(https?://[^"]+)"')
+
+# JSON-LD applicantLocationRequirements ships ISO alpha-2 codes ("CN", "GB") —
+# the cloud scorer's location axis misreads rare codes ("Remote — CN" scored
+# 15/15 live on 2026-08-19 while "Remote — US" correctly got 0). Expand to
+# names the model can't misparse. Codes not in the map pass through unchanged.
+_ISO_COUNTRIES = {
+    "US": "USA", "GB": "United Kingdom", "CA": "Canada", "AU": "Australia",
+    "DE": "Germany", "FR": "France", "ES": "Spain", "IT": "Italy", "NL": "Netherlands",
+    "BE": "Belgium", "AT": "Austria", "CH": "Switzerland", "SE": "Sweden", "NO": "Norway",
+    "DK": "Denmark", "FI": "Finland", "IE": "Ireland", "PT": "Portugal", "PL": "Poland",
+    "CZ": "Czechia", "SK": "Slovakia", "HU": "Hungary", "RO": "Romania", "BG": "Bulgaria",
+    "GR": "Greece", "CY": "Cyprus", "EE": "Estonia", "LV": "Latvia", "LT": "Lithuania",
+    "UA": "Ukraine", "MD": "Moldova", "RS": "Serbia", "HR": "Croatia", "SI": "Slovenia",
+    "BA": "Bosnia", "MK": "North Macedonia", "AL": "Albania", "ME": "Montenegro",
+    "TR": "Turkey", "IL": "Israel", "AE": "UAE", "SA": "Saudi Arabia", "QA": "Qatar",
+    "IN": "India", "CN": "China", "JP": "Japan", "KR": "South Korea", "SG": "Singapore",
+    "HK": "Hong Kong", "TW": "Taiwan", "TH": "Thailand", "VN": "Vietnam", "PH": "Philippines",
+    "ID": "Indonesia", "MY": "Malaysia", "PK": "Pakistan", "BD": "Bangladesh",
+    "UZ": "Uzbekistan", "KZ": "Kazakhstan", "GE": "Georgia", "AM": "Armenia", "AZ": "Azerbaijan",
+    "BY": "Belarus", "RU": "Russia",
+    "BR": "Brazil", "AR": "Argentina", "MX": "Mexico", "CL": "Chile", "CO": "Colombia",
+    "PE": "Peru", "UY": "Uruguay", "VE": "Venezuela", "EC": "Ecuador", "BO": "Bolivia",
+    "PY": "Paraguay", "CR": "Costa Rica", "PA": "Panama", "GT": "Guatemala", "DO": "Dominican Republic",
+    "ZA": "South Africa", "NG": "Nigeria", "KE": "Kenya", "EG": "Egypt", "MA": "Morocco",
+    "NZ": "New Zealand", "IS": "Iceland", "LU": "Luxembourg", "MT": "Malta",
+}
+
+
+def _expand_country(code: str) -> str:
+    return _ISO_COUNTRIES.get(code.strip(), code.strip())
+
+
+def _extract_apply_url(html: str) -> str:
+    """Jobgether's own outbound apply link, embedded in the offer page's JSON blob
+    (html-escaped). This is the AUTHORITATIVE direct link — even to ATS hosts we
+    can't enrich ourselves (Workday etc.). utm_* tracking params are dropped."""
+    m = _APPLY_URL_RE.search(unescape(html))
+    if not m:
+        return ""
+    url = m.group(1)
+    if "?" in url:
+        base, query = url.split("?", 1)
+        kept = [p for p in query.split("&") if not p.lower().startswith("utm_")]
+        url = base + ("?" + "&".join(kept) if kept else "")
+    return url
 
 
 def clean_description(raw_html: str) -> str:
@@ -94,7 +143,7 @@ def _location_from_posting(posting: dict) -> str:
         for c in (posting.get("applicantLocationRequirements") or [])
         if isinstance(c, dict)
     ]
-    countries = [c for c in countries if c]
+    countries = [_expand_country(c) for c in countries if c]
     if not countries:
         return "Remote worldwide"
     return "Remote — " + ", ".join(countries)
@@ -144,10 +193,12 @@ def fetch() -> list[dict]:
         except (ValueError, TypeError):
             published = ""
 
+        apply_url = _extract_apply_url(detail_html)
         jobs.append({
             "title": title,
             "company": company,
             "url": url,
+            "apply_url": apply_url or None,
             "description": description,
             "location": _location_from_posting(posting),
             "salary": _salary_from_posting(posting),

@@ -77,3 +77,34 @@ def test_english_stays_allowed():
 def test_russian_requirement_exception_still_wins():
     job = dict(_PT_JOB, description=_PT_JOB["description"] + " Russian language required.")
     assert filters.passes_language_filter(job) is True
+
+
+# --- Jobgether direct applyUrl + ISO country expansion (2026-08-19 bug pair) ---
+
+def test_extract_apply_url_from_escaped_blob():
+    html = ('...applyUrl&#34;:&#34;https://jobs.ashbyhq.com/vanta/f266-1895/application'
+            '?utm_source=Jobgether&#38;utm_content=xyz&#38;utm_campaign=search&#34;,&#34;isEasyApply...')
+    assert jobgether._extract_apply_url(html) == \
+        "https://jobs.ashbyhq.com/vanta/f266-1895/application"
+
+
+def test_extract_apply_url_keeps_non_utm_params():
+    html = '"applyUrl":"https://www.csdisco.com/careers-listing?gh_jid=8675204002&utm_medium=website"'
+    assert jobgether._extract_apply_url(html) == \
+        "https://www.csdisco.com/careers-listing?gh_jid=8675204002"
+
+
+def test_extract_apply_url_absent_returns_empty():
+    assert jobgether._extract_apply_url("<html>no blob here</html>") == ""
+
+
+def test_country_codes_expand_to_names():
+    posting = {"jobLocationType": "TELECOMMUTE",
+               "applicantLocationRequirements": [{"name": "CN"}, {"name": "GB"}]}
+    assert jobgether._location_from_posting(posting) == "Remote — China, United Kingdom"
+
+
+def test_unknown_code_passes_through():
+    posting = {"jobLocationType": "TELECOMMUTE",
+               "applicantLocationRequirements": [{"name": "XX"}]}
+    assert jobgether._location_from_posting(posting) == "Remote — XX"
