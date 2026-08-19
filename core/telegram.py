@@ -25,6 +25,19 @@ def _send(text: str) -> None:
         resp.read()
 
 
+def send_autogen_summary(generated: list[dict]) -> None:
+    """Own message for the end-of-run resume batch (Release 2) — deliberately not
+    part of send_run_summary: that one early-returns on quiet runs, while a paid
+    generation from backlog cards must always be visible."""
+    lines = "\n".join(
+        f"• {g['title']} @ {g['company']} — {g['score']}/100"
+        + (f" ({g['flags']} ⚑)" if g.get("flags") else "")
+        for g in generated
+    )
+    dashboard_link = f"\n[Дашборд]({_DASHBOARD_URL})" if _DASHBOARD_URL else ""
+    _send(f"📄 Автогенерация резюме: *{len(generated)}*\n{lines}{dashboard_link}")
+
+
 def send_run_summary(counts: dict, top_jobs: list[dict], source_counts: dict | None = None) -> None:
     """One message per scraper run — summary only, no per-vacancy spam."""
     qualified = counts["qualified"]

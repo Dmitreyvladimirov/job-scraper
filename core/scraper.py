@@ -9,6 +9,7 @@ import filters
 import ats
 import scoring_client
 import db
+import resume_client
 import notion_client
 import telegram
 import sheets
@@ -18,6 +19,7 @@ import sheets
 from sources import choicy, jobicy, telegram_channels, jobgether
 from config import (
     ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, USE_CLOUD_SCORING,
+    RESUME_AUTOGEN_MIN_SCORE, RESUME_AUTOGEN_MIN_JD_CHARS, RESUME_AUTOGEN_CAP_PER_RUN,
     validate_secrets,
 )
 from utils import strip_html, enrich_url, normalize_job_key, fetch_jd_from_url, fetch_url_generic
@@ -322,12 +324,69 @@ def run() -> None:
     db.finish_run(run_id, counts, gpt_calls)
     sheets.log_run(counts, gpt_calls, source_counts, started_at=started_at)
     telegram.send_run_summary(counts, top_jobs, source_counts)
+    # After the summary on purpose (QA review 2026-08-19): a slow/stuck resume
+    # service must never delay or drop the run's primary notification. Autogen
+    # reports through its own message instead — which also survives the
+    # summary's qualified==0 early-return (backlog cards can generate on a run
+    # that found nothing new).
+    autogen_resumes()
 
     logger.info(
         f"=== Done: {counts['qualified']} qualified | GPT calls: {gpt_calls}/{MAX_GPT_CALLS_PER_RUN} | "
         f"role:{counts['role']} language:{counts['language']} location:{counts['location']} "
         f"stale:{counts['stale']} dedup:{counts['dedup']} low_score:{counts['score']} gpt_limit:{counts['gpt_limit']} ats_error:{counts['ats_error']} ==="
     )
+
+
+def autogen_resumes() -> int:
+    """Release 2 (2026-08-19): batch resume generation at the end of a run for the
+    review-queue cards that pass the quality gates (see db.get_autogen_candidates).
+    Never raises — a broken resume service must not fail an otherwise-good run.
+    A config failure (bad token / undeployed service) aborts the batch after one
+    Telegram alert: every remaining call would fail identically. Transient failures
+    just skip the card; resume_run_id stays NULL, so the next run retries it."""
+    try:
+        candidates = db.get_autogen_candidates(
+            RESUME_AUTOGEN_MIN_SCORE, RESUME_AUTOGEN_MIN_JD_CHARS, RESUME_AUTOGEN_CAP_PER_RUN)
+    except Exception as e:
+        logger.error(f"Resume autogen: candidate query failed: {e}")
+        return 0
+    generated: list[dict] = []
+    for job in candidates:
+        # The whole loop body is guarded (QA review 2026-08-19): a DB blip in
+        # set_resume_run_id after a PAID generation must neither kill the run
+        # nor abort the rest of the batch. The known cost of that blip is one
+        # possible re-generation next run (~$0.005) — accepted. The read-check-
+        # generate race with the dashboard's own Generate button is likewise
+        # accepted (same tiny cost, single user); an atomic claim would trade it
+        # for a stuck-sentinel risk, which is worse.
+        try:
+            outcome, error_kind = resume_client.generate_via_cloud(
+                job, job.get("pipeline_run_id") or f"js-autogen-{job['id']}")
+            if outcome is None:
+                if error_kind == "config":
+                    telegram.send_error("Resume autogen config error — batch aborted (check RESUME_TOKEN / service)")
+                    break
+                continue
+            db.set_resume_run_id(job["id"], outcome.generation_run_id)
+            generated.append({
+                "title": job["title"], "company": job["company"],
+                "score": job["ats_score"], "flags": len(outcome.skeptic_findings),
+            })
+            logger.info(
+                f"  📄 resume generated: {job['title']} @ {job['company']} "
+                f"(score {job['ats_score']}, run {outcome.generation_run_id}, "
+                f"{len(outcome.skeptic_findings)} flags)")
+        except Exception:
+            logger.exception(f"Resume autogen failed for job {job.get('id')} — continuing batch")
+    if candidates:
+        logger.info(f"Resume autogen: {len(generated)}/{len(candidates)} generated")
+    if generated:
+        try:
+            telegram.send_autogen_summary(generated)
+        except Exception:
+            logger.exception("Resume autogen: telegram notification failed (non-fatal)")
+    return len(generated)
 
 
 if __name__ == "__main__":

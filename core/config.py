@@ -53,6 +53,14 @@ def validate_secrets() -> None:
 # hand-labeled set it matches his verdicts 80% at 70 vs 44% for the local scorer at 60.
 ATS_THRESHOLD = 70
 COMPANY_COOLDOWN_DAYS = 90  # warn if applied to same company within this period
+
+# Release 2 (2026-08-19): batch resume auto-generation at the end of each run.
+# Gates are about quality, not budget (a generation costs ~$0.005): only cloud-scored
+# cards still in the review queue, with a real location signal and a substantial JD.
+# >=80 (inclusive) confirmed by Dimitry 2026-08-17.
+RESUME_AUTOGEN_MIN_SCORE = 80
+RESUME_AUTOGEN_MIN_JD_CHARS = 500
+RESUME_AUTOGEN_CAP_PER_RUN = 5
 MAX_GPT_CALLS_PER_RUN = 40  # cap LLM calls per run to control costs
 MAX_JOB_AGE_DAYS = 14       # skip vacancies older than this; 0 = disabled
 

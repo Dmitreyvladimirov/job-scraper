@@ -600,6 +600,35 @@ def clear_resume_run_id(job_id: int) -> None:
         conn.close()
 
 
+def get_autogen_candidates(min_score: int, min_jd_chars: int, limit: int) -> list[dict]:
+    """Release 2 (2026-08-19): cards eligible for end-of-run resume auto-generation.
+    Only review-queue cards ('found' — applied cards already got their resume through
+    the apply flow), scored by the CLOUD scorer (local scores are on a different,
+    inflated scale), with a positive location signal and a real JD; resume_run_id IS
+    NULL doubles as the this-one-was-done marker, so a failed generation is simply
+    retried next run. Best scores first, capped."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, title, company, description, location, pipeline_run_id, ats_score
+                   FROM jobs
+                   WHERE current_status = 'found'
+                     AND scoring_source = 'cloud'
+                     AND ats_score >= %s
+                     AND coalesce(location_score, 0) > 0
+                     AND length(coalesce(description, '')) >= %s
+                     AND coalesce(trim(company), '') != ''
+                     AND resume_run_id IS NULL
+                   ORDER BY ats_score DESC, id DESC
+                   LIMIT %s""",
+                (min_score, min_jd_chars, limit),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def get_resume_flags(resume_run_id: int) -> dict | None:
     """Post-repair Skeptic findings + the pre-repair count for the flags dialog
     ('было 11 → стало 2'). before_count equals the findings length for runs
