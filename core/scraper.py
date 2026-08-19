@@ -361,8 +361,13 @@ def autogen_resumes() -> int:
         # accepted (same tiny cost, single user); an atomic claim would trade it
         # for a stuck-sentinel risk, which is worse.
         try:
+            # Provenance marker: the dashboard's Generate button reuses the card's
+            # scoring pipeline_run_id verbatim, so without the -autogen suffix a
+            # batch generation is indistinguishable from a manual click in
+            # resume.generation_run (bit us live on 2026-08-19).
+            base_prid = job.get("pipeline_run_id") or f"js-{job['id']}"
             outcome, error_kind = resume_client.generate_via_cloud(
-                job, job.get("pipeline_run_id") or f"js-autogen-{job['id']}")
+                job, f"{base_prid}-autogen")
             if outcome is None:
                 if error_kind == "config":
                     telegram.send_error("Resume autogen config error — batch aborted (check RESUME_TOKEN / service)")
