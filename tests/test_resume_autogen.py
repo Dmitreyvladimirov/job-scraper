@@ -26,7 +26,7 @@ def _candidates(n):
 
 def test_autogen_success_persists_run_ids(monkeypatch):
     stored = {}
-    monkeypatch.setattr(scraper.db, "get_autogen_candidates", lambda *a: _candidates(3))
+    monkeypatch.setattr(scraper.db, "get_autogen_candidates", lambda *a, **k: _candidates(3))
     monkeypatch.setattr(scraper.db, "set_resume_run_id", lambda job_id, rid: stored.update({job_id: rid}))
     monkeypatch.setattr(scraper.telegram, "send_autogen_summary", lambda g: None)
     monkeypatch.setattr(scraper.resume_client, "generate_via_cloud",
@@ -37,7 +37,7 @@ def test_autogen_success_persists_run_ids(monkeypatch):
 
 def test_autogen_transient_failure_skips_card(monkeypatch):
     stored = {}
-    monkeypatch.setattr(scraper.db, "get_autogen_candidates", lambda *a: _candidates(3))
+    monkeypatch.setattr(scraper.db, "get_autogen_candidates", lambda *a, **k: _candidates(3))
     monkeypatch.setattr(scraper.db, "set_resume_run_id", lambda job_id, rid: stored.update({job_id: rid}))
 
     def flaky(job, prid):
@@ -55,7 +55,7 @@ def test_autogen_db_write_failure_does_not_kill_batch(monkeypatch):
     # The QA-found blocker: a DB blip in set_resume_run_id (after a PAID call)
     # must neither raise out of autogen_resumes() nor stop the remaining cards.
     stored = {}
-    monkeypatch.setattr(scraper.db, "get_autogen_candidates", lambda *a: _candidates(3))
+    monkeypatch.setattr(scraper.db, "get_autogen_candidates", lambda *a, **k: _candidates(3))
 
     def flaky_write(job_id, rid):
         if job_id == 101:
@@ -72,7 +72,7 @@ def test_autogen_db_write_failure_does_not_kill_batch(monkeypatch):
 
 def test_autogen_sends_own_telegram_message(monkeypatch):
     sent = []
-    monkeypatch.setattr(scraper.db, "get_autogen_candidates", lambda *a: _candidates(2))
+    monkeypatch.setattr(scraper.db, "get_autogen_candidates", lambda *a, **k: _candidates(2))
     monkeypatch.setattr(scraper.db, "set_resume_run_id", lambda job_id, rid: None)
     monkeypatch.setattr(scraper.telegram, "send_autogen_summary", lambda g: sent.append(g))
     monkeypatch.setattr(scraper.resume_client, "generate_via_cloud",
@@ -85,7 +85,7 @@ def test_autogen_sends_own_telegram_message(monkeypatch):
 def test_autogen_config_failure_alerts_once_and_aborts(monkeypatch):
     alerts = []
     calls = []
-    monkeypatch.setattr(scraper.db, "get_autogen_candidates", lambda *a: _candidates(4))
+    monkeypatch.setattr(scraper.db, "get_autogen_candidates", lambda *a, **k: _candidates(4))
     monkeypatch.setattr(scraper.db, "set_resume_run_id", lambda job_id, rid: None)
     monkeypatch.setattr(scraper.telegram, "send_error", lambda msg: alerts.append(msg))
 
@@ -100,7 +100,7 @@ def test_autogen_config_failure_alerts_once_and_aborts(monkeypatch):
 
 
 def test_autogen_candidate_query_failure_is_swallowed(monkeypatch):
-    def boom(*a):
+    def boom(*a, **k):
         raise RuntimeError("db down")
     monkeypatch.setattr(scraper.db, "get_autogen_candidates", boom)
     assert scraper.autogen_resumes() == 0  # never raises into the run
