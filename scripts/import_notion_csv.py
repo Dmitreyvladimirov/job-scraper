@@ -98,8 +98,8 @@ def main():
 
         with pg.cursor() as cur:
             cur.execute("""
-                INSERT INTO jobs (run_id, url, title, company, outcome, ats_score)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO jobs (run_id, url, title, company, outcome, ats_score, source)
+                VALUES (%s, %s, %s, %s, %s, %s, 'NotionImport')
             """, (run_id, url or None, title or None, company or None, outcome, ats_score))
         pg.commit()
         imported += 1
