@@ -1,0 +1,659 @@
+[
+ {
+  "name": "Gloat",
+  "ats": "greenhouse",
+  "slug": "gloat",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Symbolab",
+  "ats": "greenhouse",
+  "slug": "symbolab",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Ex Libris",
+  "ats": "greenhouse",
+  "slug": "exlibris",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "likely on Workday (Clarivate) — expect not_found"
+ },
+ {
+  "name": "AI21 Labs",
+  "ats": "greenhouse",
+  "slug": "ai21labs",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Personetics",
+  "ats": "greenhouse",
+  "slug": "personetics",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Lightricks",
+  "ats": "greenhouse",
+  "slug": "lightricks",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Papaya Global",
+  "ats": "greenhouse",
+  "slug": "papayaglobal",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Riskified",
+  "ats": "greenhouse",
+  "slug": "riskified",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Deepchecks",
+  "ats": "ashby",
+  "slug": "deepchecks",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Immunai",
+  "ats": "greenhouse",
+  "slug": "immunai",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Wix",
+  "ats": "greenhouse",
+  "slug": "wix",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "may be on custom ATS"
+ },
+ {
+  "name": "monday.com",
+  "ats": "greenhouse",
+  "slug": "monday",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Lemonade",
+  "ats": "greenhouse",
+  "slug": "lemonade",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Melio",
+  "ats": "greenhouse",
+  "slug": "melio",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Rapyd",
+  "ats": "greenhouse",
+  "slug": "rapyd",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Fireblocks",
+  "ats": "greenhouse",
+  "slug": "fireblocks",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "eToro",
+  "ats": "greenhouse",
+  "slug": "etoro",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Similarweb",
+  "ats": "greenhouse",
+  "slug": "similarweb",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Taboola",
+  "ats": "greenhouse",
+  "slug": "taboola",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Outbrain",
+  "ats": "greenhouse",
+  "slug": "outbrain",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Yotpo",
+  "ats": "greenhouse",
+  "slug": "yotpo",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Gong",
+  "ats": "greenhouse",
+  "slug": "gong",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Verbit",
+  "ats": "greenhouse",
+  "slug": "verbit",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Snyk",
+  "ats": "greenhouse",
+  "slug": "snyk",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Wiz",
+  "ats": "greenhouse",
+  "slug": "wiz",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Island",
+  "ats": "greenhouse",
+  "slug": "island",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Coralogix",
+  "ats": "greenhouse",
+  "slug": "coralogix",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "Israeli cos often use Comeet — expect not_found"
+ },
+ {
+  "name": "Optimove",
+  "ats": "greenhouse",
+  "slug": "optimove",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Placer.ai",
+  "ats": "greenhouse",
+  "slug": "placer",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Walnut",
+  "ats": "ashby",
+  "slug": "walnut",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Bringg",
+  "ats": "greenhouse",
+  "slug": "bringg",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Aidoc",
+  "ats": "greenhouse",
+  "slug": "aidoc",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Guesty",
+  "ats": "greenhouse",
+  "slug": "guesty",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "HiBob",
+  "ats": "greenhouse",
+  "slug": "hibob",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Payoneer",
+  "ats": "greenhouse",
+  "slug": "payoneer",
+  "layer": 1,
+  "region": "IL",
+  "provenance": "roadmap_israeli_reconstructed_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Docebo",
+  "ats": "greenhouse",
+  "slug": "docebo",
+  "layer": 1,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Cornerstone OnDemand",
+  "ats": "greenhouse",
+  "slug": "cornerstoneondemand",
+  "layer": 1,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Absorb Software",
+  "ats": "greenhouse",
+  "slug": "absorbsoftware",
+  "layer": 1,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Instructure",
+  "ats": "greenhouse",
+  "slug": "instructure",
+  "layer": 1,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "D2L",
+  "ats": "greenhouse",
+  "slug": "d2l",
+  "layer": 1,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Moodle",
+  "ats": "greenhouse",
+  "slug": "moodle",
+  "layer": 1,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Litmos",
+  "ats": "greenhouse",
+  "slug": "litmos",
+  "layer": 1,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Adobe",
+  "ats": "greenhouse",
+  "slug": "adobe",
+  "layer": 1,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "likely Workday — expect not_found"
+ },
+ {
+  "name": "Coursera",
+  "ats": "greenhouse",
+  "slug": "coursera",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Udemy",
+  "ats": "greenhouse",
+  "slug": "udemy",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Pluralsight",
+  "ats": "greenhouse",
+  "slug": "pluralsight",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "2U (edX)",
+  "ats": "greenhouse",
+  "slug": "2u",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Multiverse",
+  "ats": "greenhouse",
+  "slug": "multiverse",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Guild",
+  "ats": "greenhouse",
+  "slug": "guild",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "BetterUp",
+  "ats": "greenhouse",
+  "slug": "betterup",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Eruditus",
+  "ats": "greenhouse",
+  "slug": "eruditus",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Duolingo",
+  "ats": "greenhouse",
+  "slug": "duolingo",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Preply",
+  "ats": "greenhouse",
+  "slug": "preply",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Babbel",
+  "ats": "greenhouse",
+  "slug": "babbel",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Codecademy",
+  "ats": "greenhouse",
+  "slug": "codecademy",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "DataCamp",
+  "ats": "greenhouse",
+  "slug": "datacamp",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Newsela",
+  "ats": "greenhouse",
+  "slug": "newsela",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Kahoot!",
+  "ats": "greenhouse",
+  "slug": "kahoot",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "MagicSchool AI",
+  "ats": "ashby",
+  "slug": "magicschool",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Degreed",
+  "ats": "greenhouse",
+  "slug": "degreed",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Go1",
+  "ats": "lever",
+  "slug": "go1",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "NovoEd",
+  "ats": "lever",
+  "slug": "novoed",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Seismic",
+  "ats": "greenhouse",
+  "slug": "seismic",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "roadmap_curated_2026-07",
+  "notes": "absorbed Lessonly"
+ },
+ {
+  "name": "Anthropic",
+  "ats": "greenhouse",
+  "slug": "anthropic",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "board verified live 2026-08-19"
+ },
+ {
+  "name": "OpenAI",
+  "ats": "ashby",
+  "slug": "openai",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "board verified live 2026-08-19"
+ },
+ {
+  "name": "Perplexity",
+  "ats": "ashby",
+  "slug": "perplexity-ai",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Glean",
+  "ats": "greenhouse",
+  "slug": "gleanwork",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Notion",
+  "ats": "greenhouse",
+  "slug": "notion",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Vercel",
+  "ats": "greenhouse",
+  "slug": "vercel",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Writer",
+  "ats": "ashby",
+  "slug": "writer",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Cohere",
+  "ats": "ashby",
+  "slug": "cohere",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "slug guess"
+ },
+ {
+  "name": "Synthesia",
+  "ats": "greenhouse",
+  "slug": "synthesia",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "already in Dimitry's live funnel"
+ },
+ {
+  "name": "PhotoRoom",
+  "ats": "ashby",
+  "slug": "photoroom",
+  "layer": 2,
+  "region": "GLOBAL",
+  "provenance": "ai_saas_additions_2026-08-19",
+  "notes": "already in Dimitry's live funnel"
+ }
+]

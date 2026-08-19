@@ -146,6 +146,35 @@ def init_db() -> None:
                     )
                 """)
 
+                # company_direct source (2026-08-19): curated target companies whose
+                # ATS boards are polled directly. Rows are never deleted — dead
+                # companies get status='dead' (QA requirement from the 2026-07 plan).
+                # UNIQUE(ats, slug), not name: names change after M&A, and one company
+                # can briefly run two live boards during a migration.
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS target_companies (
+                        id                   SERIAL PRIMARY KEY,
+                        name                 TEXT NOT NULL,
+                        ats                  TEXT NOT NULL,
+                        slug                 TEXT NOT NULL,
+                        status               TEXT NOT NULL DEFAULT 'pending',
+                        layer                INTEGER NOT NULL DEFAULT 2,
+                        region               TEXT,
+                        provenance           TEXT,
+                        notes                TEXT,
+                        added_at             TIMESTAMP DEFAULT NOW(),
+                        verified_at          TIMESTAMP,
+                        last_checked_at      TIMESTAMP,
+                        last_ok_at           TIMESTAMP,
+                        last_posting_count   INTEGER,
+                        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+                        zero_streak          INTEGER NOT NULL DEFAULT 0,
+                        last_error           TEXT,
+                        UNIQUE (ats, slug)
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_target_companies_status ON target_companies(status, layer)")
+
                 # Free-form notes on a vacancy card (2026-08-17) — recruiter names,
                 # interview impressions, salary quotes. Plain text, newest first.
                 cur.execute("""
@@ -496,6 +525,75 @@ def get_applied_today() -> list[dict]:
                    ORDER BY applied_at DESC""",
             )
             return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_active_target_companies() -> list[dict]:
+    """Companies company_direct polls this run. last_checked_at ASC NULLS FIRST so
+    a tail skipped by the source's time budget is polled first next run."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, name, ats, slug FROM target_companies WHERE status = 'active' "
+                "ORDER BY last_checked_at ASC NULLS FIRST, id")
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def record_target_company_results(results: list[dict]) -> None:
+    """Batch health update after a poll sweep — one connection for all rows
+    (per-call _conn() would open 40+ connections per run).
+    results: [{"id", "ok": bool, "posting_count": int|None, "error": str|None}]"""
+    if not results:
+        return
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                for r in results:
+                    if r["ok"]:
+                        cur.execute(
+                            """UPDATE target_companies SET
+                                   last_checked_at = NOW(), last_ok_at = NOW(),
+                                   last_posting_count = %s, consecutive_failures = 0,
+                                   zero_streak = CASE WHEN %s > 0 THEN 0 ELSE zero_streak + 1 END,
+                                   last_error = NULL
+                               WHERE id = %s""",
+                            (r.get("posting_count") or 0, r.get("posting_count") or 0, r["id"]),
+                        )
+                    else:
+                        cur.execute(
+                            """UPDATE target_companies SET
+                                   last_checked_at = NOW(),
+                                   consecutive_failures = consecutive_failures + 1,
+                                   last_error = %s
+                               WHERE id = %s""",
+                            ((r.get("error") or "")[:200], r["id"]),
+                        )
+    finally:
+        conn.close()
+
+
+def degrade_target_companies(threshold: int = 6) -> list[dict]:
+    """Auto-degrade companies that failed `threshold` consecutive polls to 'dormant'
+    (~1.5 days at 4 runs/day). Returns the degraded rows for the caller's single
+    aggregated Telegram alert. Rows are never deleted; recovery is manual."""
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE target_companies
+                       SET status = 'dormant',
+                           notes = coalesce(notes || ' | ', '') || 'auto-dormant ' || CURRENT_DATE || ': ' || coalesce(last_error, '?')
+                       WHERE status = 'active' AND consecutive_failures >= %s
+                       RETURNING id, name, ats, slug, last_error""",
+                    (threshold,),
+                )
+                return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
 

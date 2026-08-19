@@ -1,0 +1,106 @@
+{
+ "jobs": [
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/anthropic/jobs/5247640008",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": false
+    }
+   ],
+   "internal_job_id": 4485970008,
+   "location": {
+    "name": "San Francisco, CA | Seattle, WA"
+   },
+   "metadata": [
+    {
+     "id": 4036944008,
+     "name": "Location Type",
+     "value": "On-Site",
+     "value_type": "single_select"
+    }
+   ],
+   "id": 5247640008,
+   "updated_at": "2026-08-03T18:25:22-04:00",
+   "requisition_id": "262864",
+   "title": "Product Manager, Claude Code Model Performance ",
+   "company_name": "Anthropic",
+   "first_published": "2026-06-04T15:26:42-04:00",
+   "language": "en",
+   "application_deadline": null
+  },
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/anthropic/jobs/5101378008",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": false
+    }
+   ],
+   "internal_job_id": 4418623008,
+   "location": {
+    "name": "Sydney, Australia"
+   },
+   "metadata": [
+    {
+     "id": 4036944008,
+     "name": "Location Type",
+     "value": null,
+     "value_type": "single_select"
+    }
+   ],
+   "id": 5101378008,
+   "updated_at": "2026-08-03T18:25:22-04:00",
+   "requisition_id": "260322",
+   "title": "Account Executive, Public Sector",
+   "company_name": "Anthropic",
+   "first_published": "2026-04-07T16:10:24-04:00",
+   "language": "en",
+   "application_deadline": null
+  },
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/anthropic/jobs/4461450008",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": false
+    }
+   ],
+   "internal_job_id": 4147866008,
+   "location": {
+    "name": "New York City, NY; San Francisco, CA | New York City, NY"
+   },
+   "metadata": [
+    {
+     "id": 4036944008,
+     "name": "Location Type",
+     "value": "On-Site",
+     "value_type": "single_select"
+    }
+   ],
+   "id": 4461450008,
+   "updated_at": "2026-08-07T19:51:08-04:00",
+   "requisition_id": "3356",
+   "title": "Account Executive, Startups",
+   "company_name": "Anthropic",
+   "first_published": "2024-12-20T13:53:38-05:00",
+   "language": "en",
+   "application_deadline": null
+  }
+ ],
+ "meta": {
+  "total": 468
+ }
+}

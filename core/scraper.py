@@ -16,7 +16,7 @@ import sheets
 # Disabled 2026-07-14 after source audit (see SOURCES_DECISION.md): himalayas,
 # weworkremotely, remotive, remoteok, arbeitnow — API-side issues (ignored search
 # params / stale backlog), 21/174 qualified from ~19k rows. Files kept in sources/.
-from sources import choicy, jobicy, telegram_channels, jobgether
+from sources import choicy, company_direct, jobicy, telegram_channels, jobgether
 from config import (
     ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, USE_CLOUD_SCORING,
     RESUME_AUTOGEN_MIN_SCORE, RESUME_AUTOGEN_MIN_JD_CHARS, RESUME_AUTOGEN_CAP_PER_RUN,
@@ -103,6 +103,9 @@ def run() -> None:
         ("TelegramChannels",    telegram_channels.fetch()),
         ("Jobgether",           jobgether.fetch()),
         ("Choicy",              choicy.fetch()),
+        # Last on purpose: when MAX_GPT_CALLS_PER_RUN bites, CompanyDirect's tail is
+        # cut first (gpt_limit rows are not marked seen, so the next run retries them).
+        ("CompanyDirect",       company_direct.fetch()),
     ]
     source_counts = {name: len(batch) for name, batch in sources_data}
     jobs = [j for _, batch in sources_data for j in batch]
