@@ -530,14 +530,21 @@ def get_applied_today() -> list[dict]:
 
 
 def get_active_target_companies() -> list[dict]:
-    """Companies company_direct polls this run. last_checked_at ASC NULLS FIRST so
+    """Companies company_direct polls THIS run. Layers became real schedules on
+    2026-08-20 (Dimitry's redesign): layer 1 = every run (4x/day), layer 2 =
+    daily, layer 3 = every 2 days — intervals set slightly under 24/48h so the
+    cron slot drift never skips a whole day. last_checked_at ASC NULLS FIRST so
     a tail skipped by the source's time budget is polled first next run."""
     conn = _conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name, ats, slug FROM target_companies WHERE status = 'active' "
-                "ORDER BY last_checked_at ASC NULLS FIRST, id")
+                """SELECT id, name, ats, slug FROM target_companies
+                   WHERE status = 'active'
+                     AND (last_checked_at IS NULL
+                          OR last_checked_at < now() - make_interval(hours =>
+                              CASE layer WHEN 1 THEN 0 WHEN 2 THEN 22 ELSE 46 END))
+                   ORDER BY last_checked_at ASC NULLS FIRST, id""")
             return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
