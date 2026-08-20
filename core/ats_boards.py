@@ -139,7 +139,65 @@ def list_ashby(slug: str, *, timeout: float = 10.0) -> list[dict]:
     return postings
 
 
-LISTERS = {"greenhouse": list_greenhouse, "lever": list_lever, "ashby": list_ashby}
+def list_comeet(slug: str, *, timeout: float = 10.0) -> list[dict]:
+    """Comeet — the fourth platform (2026-08-20, Dimitry's call): it dominates
+    Israeli tech hiring, so without it a Tel Aviv-based search is structurally
+    blind to Checkmarx/Pentera/XM Cyber/Gloat/Kaltura/Verbit and dozens more.
+
+    Unlike the other three, a Comeet board needs TWO public values — a company
+    uid and a token — both published in the company's own careers page. They are
+    stored together in the slug column as "uid:token" (e.g. "1A.007:A1746...").
+    scripts/find_comeet_board.py extracts them from a careers URL.
+
+    The listing already carries full descriptions and locations, so no
+    per-posting fetch is needed."""
+    if ":" not in (slug or ""):
+        raise AtsBoardNotFound(f"comeet slug must be 'uid:token', got {slug!r}")
+    uid, token = slug.split(":", 1)
+    _check_slug(uid.replace(".", "-"))
+    if not re.fullmatch(r"[A-Za-z0-9]{8,64}", token or ""):
+        raise AtsBoardNotFound(f"comeet token looks invalid for uid {uid!r}")
+    try:
+        status, data = _get_json(
+            f"https://www.comeet.co/careers-api/2.0/company/{uid}/positions",
+            params={"token": token, "details": "true"}, timeout=timeout)
+    except AtsBoardError:
+        raise
+    except Exception as e:
+        raise AtsBoardError(f"comeet/{uid}: {e}") from e
+    if status == 400 or (isinstance(data, dict) and data.get("status") == 400):
+        # Comeet answers a bad uid/token with HTTP 400 + a JSON error body,
+        # not a 404 — same meaning for us: this board is not reachable.
+        raise AtsBoardNotFound(f"comeet/{uid}: invalid uid or token")
+    if status != 200 or not isinstance(data, list):
+        raise AtsBoardError(f"comeet/{uid}: http_{status}")
+
+    postings = []
+    for j in data:
+        location = ""
+        loc = j.get("location")
+        if isinstance(loc, dict):
+            location = loc.get("name") or ", ".join(
+                x for x in (loc.get("city"), loc.get("country")) if x)
+        description = ""
+        for block in (j.get("details") or []):
+            if isinstance(block, dict) and block.get("value"):
+                description += strip_html(unescape(str(block["value"]))) + "\n\n"
+        postings.append(_posting(
+            j.get("uid") or j.get("internal_use_custom_id") or j.get("name"),
+            j.get("name"),
+            # url_comeet_hosted_page is the human page; position_url is the API
+            # link and carries the token — never store that in a job card.
+            j.get("url_comeet_hosted_page") or j.get("url_active_page") or "",
+            location=location,
+            description=description.strip(),
+            published=(j.get("time_updated") or "")[:10],
+        ))
+    return postings
+
+
+LISTERS = {"greenhouse": list_greenhouse, "lever": list_lever, "ashby": list_ashby,
+           "comeet": list_comeet}
 
 
 def fetch_description(ats: str, slug: str, posting_id: str, *, timeout: float = 10.0) -> str:

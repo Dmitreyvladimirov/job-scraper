@@ -130,3 +130,41 @@ def test_fetch_description_swallows_errors(monkeypatch):
 
     monkeypatch.setattr(ats_boards, "_get_json", boom)
     assert ats_boards.fetch_description("greenhouse", "acme", "123") == ""
+
+
+# --- Comeet (fourth platform, 2026-08-20) ---
+
+_COMEET_OK = [{
+    "uid": "AB.123", "name": "Product Manager, Platform",
+    "location": {"name": "Tel Aviv", "country": "IL", "city": "Tel Aviv"},
+    "details": [{"name": "Description", "value": "<p>Real JD text</p>"}],
+    "url_comeet_hosted_page": "https://www.comeet.com/jobs/acme/1A.007/pm/AB.123",
+    "position_url": "https://www.comeet.co/careers-api/2.0/company/1A.007/positions/AB.123?token=SECRET",
+    "time_updated": "2026-08-01T10:00:00Z",
+}]
+
+
+def test_comeet_maps_fields(monkeypatch):
+    _seam(monkeypatch, 200, _COMEET_OK)
+    p = ats_boards.list_comeet("1A.007:A1746A11E453C8A285C142E327332733")[0]
+    assert p["title"] == "Product Manager, Platform"
+    assert p["location"] == "Tel Aviv"
+    assert "Real JD text" in p["description"]
+    assert p["published"] == "2026-08-01"
+    # the API url carries the token — the human page must be what lands on a card
+    assert "token" not in p["url"] and p["url"].startswith("https://www.comeet.com/jobs/")
+
+
+def test_comeet_requires_uid_and_token(monkeypatch):
+    calls = _seam(monkeypatch, 200, _COMEET_OK)
+    for bad in ("1A.007", "", ":TOKEN", "1A.007:short"):
+        with pytest.raises(ats_boards.AtsBoardNotFound):
+            ats_boards.list_comeet(bad)
+    assert calls == []  # never hits the network with a malformed pair
+
+
+def test_comeet_bad_credentials_is_not_found(monkeypatch):
+    # Comeet answers a wrong uid/token with HTTP 400 + JSON error, not 404
+    _seam(monkeypatch, 400, {"status": 400, "message": "Account uid or token are not valid"})
+    with pytest.raises(ats_boards.AtsBoardNotFound):
+        ats_boards.list_comeet("1A.007:A1746A11E453C8A285C142E327332733")
