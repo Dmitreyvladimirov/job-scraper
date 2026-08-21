@@ -175,6 +175,55 @@ def init_db() -> None:
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_target_companies_status ON target_companies(status, layer)")
 
+                # Mail agent (2026-08-22). One row per processed email; UNIQUE on the
+                # RFC822 Message-ID is the whole idempotency story — the agent WILL
+                # re-read the same message (bookmark loss, retry, overlapping
+                # newer_than window) and a replay must be a no-op. job_id NULL means
+                # "could not match to a card" — the email is still recorded, never
+                # dropped. 'action' is the lifecycle: pending (awaiting Dimitry) →
+                # confirmed/dismissed, or applied (auto) / ignored (noise).
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS mail_event (
+                        id              SERIAL PRIMARY KEY,
+                        message_id      TEXT NOT NULL UNIQUE,
+                        thread_id       TEXT,
+                        received_at     TIMESTAMP,
+                        from_addr       TEXT,
+                        subject         TEXT,
+                        excerpt         TEXT,
+                        job_id          INTEGER REFERENCES jobs(id),
+                        company_hint    TEXT,
+                        title_hint      TEXT,
+                        classification  TEXT,
+                        confidence      REAL,
+                        proposed_status TEXT,
+                        proposed_reason TEXT,
+                        action          TEXT NOT NULL DEFAULT 'pending',
+                        resolved_at     TIMESTAMP,
+                        created_at      TIMESTAMP DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_mail_event_action ON mail_event(action)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_mail_event_job_id ON mail_event(job_id)")
+
+                # Google credentials live in a ROW, not env (architect's one concession
+                # to the multi-user future): the difference between "add a user" and
+                # "rewrite the agent". user_id NULL = the installation owner (Dimitry).
+                # Token is Fernet-encrypted; the key stays in env.
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS google_credential (
+                        id              SERIAL PRIMARY KEY,
+                        user_id         INTEGER,
+                        email           TEXT NOT NULL,
+                        refresh_token   BYTEA NOT NULL,
+                        scopes          TEXT,
+                        created_at      TIMESTAMP DEFAULT NOW(),
+                        last_refresh_at TIMESTAMP,
+                        last_error      TEXT,
+                        UNIQUE (email)
+                    )
+                """)
+
                 # Free-form notes on a vacancy card (2026-08-17) — recruiter names,
                 # interview impressions, salary quotes. Plain text, newest first.
                 cur.execute("""
@@ -527,6 +576,135 @@ def get_applied_today() -> list[dict]:
             return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
+
+
+ACTIVE_FUNNEL = ("applied", "recruiter_reply", "screen", "interview", "offer")
+
+
+def find_cards_for_mail(company_hint: str | None, sender_domain: str | None,
+                        title_hint: str | None, limit: int = 10) -> list[dict]:
+    """Candidate cards an incoming email might refer to (mail agent, 2026-08-22).
+
+    Deliberately searches ONLY the active funnel: the agent physically cannot
+    reach a 'found' card (never applied to) or a 'rejected' one (already closed).
+    That single WHERE clause is most of the feature's safety.
+
+    Ranking: apply_url/url host match (strong — but only ~40% of real emails come
+    from a domain that matches, per the labelling pass) > exact company match >
+    company substring. Title is a tie-breaker only; ATS subject lines rarely quote
+    the exact stored title. Returns a compact projection, never SELECT j.*."""
+    if not any((company_hint, sender_domain)):
+        return []
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, title, company, url, apply_url, current_status, applied_at,
+                          CASE
+                            WHEN %(domain)s <> '' AND (url ILIKE %(dom_like)s OR apply_url ILIKE %(dom_like)s) THEN 3
+                            WHEN %(company)s <> '' AND lower(trim(company)) = lower(trim(%(company)s)) THEN 2
+                            WHEN %(company)s <> '' AND lower(company) LIKE %(comp_like)s THEN 1
+                            ELSE 0
+                          END AS match_score
+                   FROM jobs
+                   WHERE current_status = ANY(%(statuses)s)
+                     AND coalesce(trim(company), '') <> ''
+                     AND length(company) <= 50
+                     AND company NOT ILIKE '%%linkedin%%'
+                     AND (
+                       (%(domain)s <> '' AND (url ILIKE %(dom_like)s OR apply_url ILIKE %(dom_like)s))
+                       OR (%(company)s <> '' AND lower(company) LIKE %(comp_like)s)
+                     )
+                   ORDER BY match_score DESC,
+                            CASE WHEN %(title)s <> '' AND lower(title) LIKE %(title_like)s THEN 0 ELSE 1 END,
+                            applied_at DESC NULLS LAST
+                   LIMIT %(limit)s""",
+                {
+                    "domain": sender_domain or "",
+                    "dom_like": f"%{sender_domain}%" if sender_domain else "",
+                    "company": company_hint or "",
+                    "comp_like": f"%{(company_hint or '').lower().strip()}%",
+                    "title": title_hint or "",
+                    "title_like": f"%{(title_hint or '').lower().strip()}%",
+                    "statuses": list(ACTIVE_FUNNEL),
+                    "limit": limit,
+                },
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def record_mail_event(event: dict) -> dict:
+    """Insert one processed email. ON CONFLICT (message_id) DO NOTHING makes a
+    replay a no-op — returns the STORED row either way, with duplicate=True, so
+    the caller can tell "already handled" from "just handled" without a 409."""
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO mail_event
+                           (message_id, thread_id, received_at, from_addr, subject, excerpt,
+                            job_id, company_hint, title_hint, classification, confidence,
+                            proposed_status, proposed_reason, action)
+                       VALUES (%(message_id)s, %(thread_id)s, %(received_at)s, %(from_addr)s,
+                               %(subject)s, %(excerpt)s, %(job_id)s, %(company_hint)s,
+                               %(title_hint)s, %(classification)s, %(confidence)s,
+                               %(proposed_status)s, %(proposed_reason)s, %(action)s)
+                       ON CONFLICT (message_id) DO NOTHING
+                       RETURNING id""",
+                    event,
+                )
+                row = cur.fetchone()
+                if row:
+                    return {"id": row["id"], "duplicate": False}
+                cur.execute("SELECT id, action FROM mail_event WHERE message_id = %s",
+                            (event["message_id"],))
+                stored = cur.fetchone()
+                return {"id": stored["id"], "duplicate": True, "action": stored["action"]}
+    finally:
+        conn.close()
+
+
+def get_pending_mail_events(limit: int = 50) -> list[dict]:
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT e.*, j.title AS job_title, j.company AS job_company,
+                          j.current_status AS job_status
+                   FROM mail_event e LEFT JOIN jobs j ON j.id = e.job_id
+                   WHERE e.action = 'pending' ORDER BY e.received_at DESC LIMIT %s""",
+                (limit,))
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def resolve_mail_event(event_id: int, action: str, job_id: int | None = None,
+                       status: str | None = None, reason: str | None = None) -> dict:
+    """Confirm or dismiss a pending event. Confirming applies the status change
+    through the normal update_job_status() — same validation, same status_log —
+    with source='mail-agent-confirmed' so the whole feature stays revertible with
+    one SELECT."""
+    if action not in ("confirmed", "dismissed"):
+        raise ValueError(f"Unknown action: {action}")
+    applied = None
+    if action == "confirmed" and status:
+        applied = update_job_status(job_id, status, rejection_reason=reason,
+                                    source="mail-agent-confirmed")
+    conn = _conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE mail_event SET action = %s, resolved_at = NOW(), "
+                    "job_id = coalesce(%s, job_id) WHERE id = %s",
+                    (action, job_id, event_id))
+    finally:
+        conn.close()
+    return {"event_id": event_id, "action": action, "transition": applied}
 
 
 def get_active_target_companies() -> list[dict]:

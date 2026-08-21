@@ -68,6 +68,32 @@ RESUME_AUTOGEN_CAP_PER_RUN = 5
 # case: rejected at HM stage in March, 4 new postings polled in August).
 COMPANY_REJECTION_COOLDOWN_DAYS = 180
 
+# Mail agent (2026-08-22). Taxonomy derived from labelling ~80 real emails from
+# Dimitry's inbox, NOT guessed — the initial 4-category hypothesis missed five of
+# these. Each label maps to a TARGET stage (not "one step forward"): a single
+# interview process sends 4+ emails (invite → confirmed → calendar → reminder),
+# and stepping forward on each would fly a card to offer in two days.
+MAIL_CLASSES = {
+    # label:            (target_status, rejection_reason, needs_confirmation)
+    "acknowledgement":  (None,          None,                False),  # note only; card is already applied
+    "interview_invite": ("recruiter_reply", None,            False),  # recruiter reached out
+    "interview_scheduled": ("screen",   None,                False),  # slot booked
+    "interview_reminder": (None,        None,                False),  # note only — stage already recorded
+    "calendar_invite":  (None,          None,                False),  # note only, same reason
+    "rejection":        ("rejected",    "company_rejected",  True),   # NEVER auto: triggers the 180-day company cooldown
+    "position_on_hold": ("rejected",    "inactive_closed",   True),   # the ROLE froze — not a verdict on him
+    "action_required":  (None,          None,                True),   # e.g. "verify your email to complete the application"
+    "noise":            (None,          None,                False),  # verification codes, feedback surveys, newsletters
+}
+
+# v1 policy (Dimitry, 2026-08-22): everything goes through confirmation. The
+# tuple's needs_confirmation stays as documentation of what would be safe to
+# automate later, once accuracy is measured on real traffic.
+MAIL_AUTO_APPLY = False
+MAIL_MAX_PER_RUN = 50
+MAIL_LOOKBACK_DAYS = 7
+MAIL_GMAIL_QUERY = "label:jobhunt newer_than:{days}d -in:draft -in:sent"
+
 # Phase 4 (2026-08-19): the single storage truncation limit for job descriptions.
 # The cloud scorer receives the full text BEFORE this truncation and applies its
 # own prompt-side limit — this constant only bounds what Postgres keeps (and thus
