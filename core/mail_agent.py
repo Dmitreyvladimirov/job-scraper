@@ -155,6 +155,13 @@ def decide(label: str, candidates: list[dict]) -> dict:
         return {"action": "ignored", "job_id": job["id"] if job else None,
                 "proposed_status": None, "proposed_reason": None}
     if not candidates:
+        # Nothing to act on AND nothing worth interrupting him for: an
+        # acknowledgement or reminder for a card we cannot find is just noise.
+        # Rejections, frozen roles and "you must act" always surface — a missed
+        # one of those is exactly the failure this feature exists to prevent.
+        if target is None and not _needs_confirm:
+            return {"action": "ignored", "job_id": None,
+                    "proposed_status": None, "proposed_reason": None}
         return {"action": "pending", "job_id": None, "proposed_status": target,
                 "proposed_reason": reason, "note": "no matching card"}
     if job is None:
@@ -166,6 +173,15 @@ def decide(label: str, candidates: list[dict]) -> dict:
                 "proposed_status": None, "proposed_reason": None}
 
     current = job.get("current_status")
+    if current == "rejected":
+        # Only the system's own no_response guesses are reopenable on mail evidence
+        # (the Workday case, 2026-08-22). A card Dimitry closed himself stays closed:
+        # find_cards_for_mail already filters those out, and this is the second lock.
+        if job.get("rejection_reason") == "no_response" and target != "rejected":
+            return {"action": "pending", "job_id": job["id"], "proposed_status": target,
+                    "proposed_reason": None, "note": "card was auto-aged — reopen?"}
+        return {"action": "ignored", "job_id": job["id"],
+                "proposed_status": None, "proposed_reason": None}
     if target != "rejected" and current in FUNNEL_ORDER and target in FUNNEL_ORDER \
             and FUNNEL_ORDER.index(target) <= FUNNEL_ORDER.index(current):
         # Already at or past this stage — Dimitry recorded it manually, or an

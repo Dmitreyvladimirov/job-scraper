@@ -582,7 +582,8 @@ ACTIVE_FUNNEL = ("applied", "recruiter_reply", "screen", "interview", "offer")
 
 
 def find_cards_for_mail(company_hint: str | None, sender_domain: str | None,
-                        title_hint: str | None, limit: int = 10) -> list[dict]:
+                        title_hint: str | None, limit: int = 10,
+                        include_aged: bool = True) -> list[dict]:
     """Candidate cards an incoming email might refer to (mail agent, 2026-08-22).
 
     Deliberately searches ONLY the active funnel: the agent physically cannot
@@ -607,7 +608,15 @@ def find_cards_for_mail(company_hint: str | None, sender_domain: str | None,
                             ELSE 0
                           END AS match_score
                    FROM jobs
-                   WHERE current_status = ANY(%(statuses)s)
+                   WHERE (current_status = ANY(%(statuses)s)
+                          -- Aged-out cards are searchable too (found live 2026-08-22):
+                          -- the Notion migration closed everything older than 30 days
+                          -- as no_response, which mis-aged a LIVE Workday process that
+                          -- had an interview scheduled. Those closures are the system's
+                          -- guess, not Dimitry's decision, so mail evidence should be
+                          -- able to reopen them. Cards HE rejected stay unreachable.
+                          OR (%(include_aged)s AND current_status = 'rejected'
+                              AND rejection_reason = 'no_response'))
                      AND coalesce(trim(company), '') <> ''
                      AND length(company) <= 50
                      AND company NOT ILIKE '%%linkedin%%'
@@ -615,7 +624,7 @@ def find_cards_for_mail(company_hint: str | None, sender_domain: str | None,
                        (%(domain)s <> '' AND (url ILIKE %(dom_like)s OR apply_url ILIKE %(dom_like)s))
                        OR (%(company)s <> '' AND lower(company) LIKE %(comp_like)s)
                      )
-                   ORDER BY match_score DESC,
+                   ORDER BY (current_status <> 'rejected') DESC, match_score DESC,
                             CASE WHEN %(title)s <> '' AND lower(title) LIKE %(title_like)s THEN 0 ELSE 1 END,
                             applied_at DESC NULLS LAST
                    LIMIT %(limit)s""",
@@ -627,6 +636,7 @@ def find_cards_for_mail(company_hint: str | None, sender_domain: str | None,
                     "title": title_hint or "",
                     "title_like": f"%{(title_hint or '').lower().strip()}%",
                     "statuses": list(ACTIVE_FUNNEL),
+                    "include_aged": include_aged,
                     "limit": limit,
                 },
             )

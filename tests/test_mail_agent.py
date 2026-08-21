@@ -164,3 +164,33 @@ def test_duplicate_message_is_a_no_op(monkeypatch):
         _llm('{"label": "rejection", "company": "Acme", "confidence": 0.95}'))
     assert stats["duplicates"] == 1
     assert commented == []  # a replay must not re-comment on the card
+
+
+# --- Auto-aged cards (found live 2026-08-22: the Notion migration closed a LIVE
+# Workday process as no_response, and the agent could not see it) ---
+
+def _aged(id_=9, reason="no_response"):
+    return {"id": id_, "title": "AI PM", "company": "Workday", "current_status": "rejected",
+            "rejection_reason": reason, "url": "", "apply_url": ""}
+
+
+def test_live_email_can_reopen_an_auto_aged_card():
+    out = mail_agent.decide("interview_scheduled", [_aged()])
+    assert out["action"] == "pending" and out["proposed_status"] == "screen"
+    assert "auto-aged" in out["note"]
+
+
+def test_a_card_he_rejected_himself_is_never_reopened():
+    # Only the system's own no_response guesses are reopenable; his decisions stand.
+    out = mail_agent.decide("interview_scheduled", [_aged(reason="company_rejected")])
+    assert out["action"] == "ignored"
+
+
+def test_unmatched_acknowledgement_is_not_queued():
+    out = mail_agent.decide("acknowledgement", [])
+    assert out["action"] == "ignored"
+
+
+def test_unmatched_rejection_is_still_queued():
+    out = mail_agent.decide("rejection", [])
+    assert out["action"] == "pending" and out["job_id"] is None
