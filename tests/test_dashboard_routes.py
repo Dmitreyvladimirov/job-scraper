@@ -551,3 +551,49 @@ def test_bulk_reject_form_for_real_jobs():
     r = _authenticated_client().get("/jobs/bulk-reject-form", params={"ids": ids})
     assert r.status_code == 200
     assert "bulk-reject-dialog" in r.text
+
+
+# --- Mail agent queue (2026-08-22) ---
+
+def test_mail_queue_rejects_no_cookie():
+    assert _anon_client().get("/mail").status_code == 403
+    assert _anon_client().post("/mail/events/1/resolve", data={"action": "dismissed"}).status_code == 403
+
+
+def test_mail_queue_renders(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "get_pending_mail_events", lambda limit=50: [{
+        "id": 7, "subject": "Update on your application", "from_addr": "no-reply@ashbyhq.com",
+        "excerpt": "we've decided not to move forward", "classification": "rejection",
+        "received_at": None, "company_hint": "Adapty", "job_id": 42,
+        "job_title": "Senior PM", "job_company": "Adapty", "job_status": "applied",
+        "proposed_status": "rejected", "proposed_reason": "company_rejected",
+    }])
+    r = _authenticated_client().get("/mail")
+    assert r.status_code == 200
+    assert "mail-event-7" in r.text and "Adapty" in r.text
+
+
+def test_mail_confirm_applies_through_normal_status_path(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(dashboard.db, "resolve_mail_event",
+                        lambda eid, action, job_id=None, status=None, reason=None:
+                        calls.update(locals()) or {"event_id": eid, "action": action})
+    r = _authenticated_client().post("/mail/events/7/resolve", data={
+        "action": "confirmed", "job_id": "42", "status": "rejected", "reason": "company_rejected"})
+    assert r.status_code == 200
+    assert calls["job_id"] == 42 and calls["status"] == "rejected"
+    assert "применено" in r.text
+
+
+def test_mail_confirm_without_card_is_400(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "resolve_mail_event", lambda *a, **k: {})
+    r = _authenticated_client().post("/mail/events/7/resolve", data={
+        "action": "confirmed", "job_id": "", "status": "rejected"})
+    assert r.status_code == 400
+
+
+def test_mail_dismiss_needs_no_card(monkeypatch):
+    monkeypatch.setattr(dashboard.db, "resolve_mail_event",
+                        lambda *a, **k: {"event_id": 7, "action": "dismissed"})
+    r = _authenticated_client().post("/mail/events/7/resolve", data={"action": "dismissed"})
+    assert r.status_code == 200 and "пропущено" in r.text

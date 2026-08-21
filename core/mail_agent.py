@@ -23,6 +23,7 @@ proposal waits for Dimitry.
 """
 import json
 import logging
+import os
 import re
 
 import db
@@ -226,6 +227,53 @@ def process(messages: list[dict], call_llm) -> dict:
         except Exception:
             stats["errors"] += 1
             logger.exception(f"mail agent failed on {msg.get('message_id')} — continuing")
+    return stats
+
+
+def _call_claude(system: str, user: str) -> tuple[str, dict]:
+    """Anthropic call for classification. Same shape as scoring_client's contract;
+    Haiku is plenty for a 9-way labelling task, and the volume (~20 relevant emails
+    a day) makes cost a rounding error."""
+    import anthropic
+    from config import MAIL_MODEL
+
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    resp = client.messages.create(model=MAIL_MODEL, max_tokens=400,
+                                  system=system, messages=[{"role": "user", "content": user}])
+    text = "".join(b.text for b in resp.content if b.type == "text")
+    usage = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens}
+    return text, usage
+
+
+def run() -> dict:
+    """Entry point for the Railway cron service. Never raises: this process failing
+    must not be able to affect anything else, and a crash loop would be invisible."""
+    import gmail_client
+    from config import MAIL_GMAIL_QUERY, MAIL_LOOKBACK_DAYS
+
+    try:
+        cred = gmail_client.load_credential()
+        if not cred:
+            telegram.send_error("📬 Почтовый агент: нет Google-креденшла — запусти scripts/mint_gmail_token.py")
+            return {"error": "no_credential"}
+        token = gmail_client.access_token(
+            cred["client_id"], cred["client_secret"], cred["refresh_token"])
+        query = MAIL_GMAIL_QUERY.format(days=MAIL_LOOKBACK_DAYS)
+        messages = gmail_client.fetch_messages(token, query, limit=MAIL_MAX_PER_RUN)
+    except gmail_client.GmailAuthError as e:
+        # The one failure that must always be loud: dead auth is indistinguishable
+        # from "no one replied to you" unless someone says so.
+        logger.error(f"mail agent: gmail auth failed: {e}")
+        telegram.send_error(f"📬 Почтовый агент: авторизация Gmail не прошла — {str(e)[:200]}")
+        return {"error": "auth"}
+    except Exception as e:
+        logger.exception("mail agent: could not fetch mail")
+        telegram.send_error(f"📬 Почтовый агент: не смог прочитать почту — {str(e)[:200]}")
+        return {"error": "fetch"}
+
+    logger.info(f"mail agent: {len(messages)} messages matched {query!r}")
+    stats = process(messages, _call_claude)
+    send_summary(stats)
     return stats
 
 

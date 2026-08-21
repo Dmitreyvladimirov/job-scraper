@@ -93,6 +93,7 @@ MAIL_AUTO_APPLY = False
 MAIL_MAX_PER_RUN = 50
 MAIL_LOOKBACK_DAYS = 7
 MAIL_GMAIL_QUERY = "label:jobhunt newer_than:{days}d -in:draft -in:sent"
+MAIL_MODEL = "claude-haiku-4-5-20251001"
 
 # Phase 4 (2026-08-19): the single storage truncation limit for job descriptions.
 # The cloud scorer receives the full text BEFORE this truncation and applies its

@@ -971,6 +971,51 @@ def tracker(
     return RedirectResponse(url="/dashboard" + ("?" + "&".join(params) if params else ""), status_code=301)
 
 
+@app.get("/mail", response_class=HTMLResponse)
+def mail_queue(request: Request):
+    """Mail agent review queue (2026-08-22). Everything here is a PROPOSAL — no
+    card has been touched yet; v1 applies nothing without this screen or the
+    Telegram buttons."""
+    _authenticate(request)
+    return templates.TemplateResponse(request, "mail_queue.html", {
+        "active": "mail",
+        "events": db.get_pending_mail_events(),
+        "statuses": CURRENT_STATUSES,
+        "status_labels": STATUS_LABELS,
+        "reasons": [(r, REJECTION_REASON_LABELS[r]) for r in USER_REJECTION_REASONS],
+    })
+
+
+@app.post("/mail/events/{event_id}/resolve", response_class=HTMLResponse)
+def resolve_mail_event(
+    request: Request,
+    event_id: int,
+    action: str = Form(...),
+    job_id: str = Form(default=""),
+    status: str = Form(default=""),
+    reason: str = Form(default=""),
+):
+    """Confirm or dismiss one proposal. Confirming goes through the normal
+    db.update_job_status(), so the transition is validated exactly like a manual
+    one and lands in status_log with source='mail-agent-confirmed' — which keeps
+    the whole feature revertible with a single query."""
+    _authenticate(request)
+    if action not in ("confirmed", "dismissed"):
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action!r}")
+    jid = int(job_id) if job_id.strip().lstrip("#").isdigit() else None
+    if action == "confirmed" and not jid:
+        raise HTTPException(status_code=400, detail="Нужен номер карточки")
+    try:
+        db.resolve_mail_event(event_id, action, job_id=jid,
+                              status=status or None, reason=reason or None)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    verb = "применено" if action == "confirmed" else "пропущено"
+    return HTMLResponse(
+        f'<div id="mail-event-{event_id}" style="font-size:12.5px;color:var(--color-neutral-600);'
+        f'padding:8px 0">Событие #{event_id} — {verb}.</div>')
+
+
 @app.get("/applied-today", response_class=HTMLResponse)
 def applied_today(request: Request):
     """Table behind the dashboard's Applied-today stat — today's applications with
