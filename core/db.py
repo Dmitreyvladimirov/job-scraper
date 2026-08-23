@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 
 import psycopg2
@@ -398,33 +399,83 @@ def log_job(
     return job_id
 
 
+_DUP_COLUMNS = "id, title, company, source, current_status, logged_at, ats_score"
+
+# Only real cards are duplicates worth reporting. Every other outcome ('dedup',
+# 'role', 'stale', 'location', 'low_score', ...) is an audit row the scraper writes
+# for run statistics — 11,874 'dedup' rows against 1,440 real cards — and they are
+# invisible in the kanban. Without this filter the newest match for a repeatedly
+# seen vacancy is an audit row with no status and no score, so the duplicate dialog
+# would offer to re-score a row that is not a card.
+_DUP_REAL_CARD = "outcome = 'qualified'"
+
+
+def _normalize_posting_title(title: str | None) -> str:
+    """Title reduced to what actually identifies the vacancy.
+
+    Drops parentheticals, punctuation and case, because those are exactly what
+    differs between two sightings of one posting: the Notion importer appends
+    "(Company)", a person pastes the title as the board wrote it, a scraper keeps
+    the raw string. FinAgra landed as two cards on 2026-08-23 — "Senior Product
+    Manager" and "Senior Product Manager (FinAgra)" — for precisely this reason.
+
+    Deliberately NOT as aggressive as matching on company alone: Adapty is hiring
+    both a "Head of Product" and a "Product Lead, Analytics & ML", and collapsing
+    those would hide a real vacancy, which is a worse failure than a twin card.
+    """
+    text = re.sub(r"\(.*?\)", " ", (title or "").lower())
+    text = re.sub(r"[^a-z0-9\u0400-\u04ff ]+", " ", text)
+    return " ".join(text.split())
+
+
+def _normalize_posting_url(url: str | None) -> str:
+    """URL without the query string or a trailing slash — the same posting arrives
+    with different tracking tails (?ashby_jid=...&utm_source=..., ?ref=...), and an
+    exact string comparison treats those as different vacancies."""
+    if not url:
+        return ""
+    return re.sub(r"[?#].*$", "", url.strip()).rstrip("/")
+
+
 def find_manual_duplicate(url: str | None, company: str | None, title: str) -> dict | None:
-    """Pre-insert duplicate probe for the dashboard's manual Add-job form. Matches by
-    exact URL first, then by case-insensitive (company, title). Deliberately simpler
-    than the scraper's normalize_job_key() dedup — a human pasting a LinkedIn posting
-    needs a warning on the obvious match, not fuzzy-key coverage."""
+    """Pre-insert duplicate probe for the manual paths — the dashboard's Add-job
+    form and the Telegram/API intake. Matches by URL first (ignoring tracking
+    parameters, against both url and apply_url), then by company plus a normalized
+    title.
+
+    Still deliberately narrower than the scraper's normalize_job_key(): this one
+    only has to warn a human about an obvious repeat, and a false merge here costs
+    a vacancy he never sees."""
     conn = _conn()
     try:
         with conn.cursor() as cur:
-            if url:
+            normalized_url = _normalize_posting_url(url)
+            if normalized_url:
                 cur.execute(
-                    "SELECT id, title, company, source, current_status, logged_at, ats_score FROM jobs "
-                    "WHERE url = %s OR apply_url = %s ORDER BY id DESC LIMIT 1",
-                    (url, url),
+                    f"SELECT {_DUP_COLUMNS} FROM jobs "
+                    f"WHERE {_DUP_REAL_CARD} AND ("
+                    "     rtrim(split_part(url, '?', 1), '/') = %s "
+                    "  OR rtrim(split_part(apply_url, '?', 1), '/') = %s) "
+                    "ORDER BY id DESC LIMIT 1",
+                    (normalized_url, normalized_url),
                 )
                 row = cur.fetchone()
                 if row:
                     return dict(row)
             if company:
+                # Normalizing the title in SQL would mean reimplementing the same
+                # regexes in a second language; the company filter keeps the row
+                # count trivial, so the comparison happens here instead.
                 cur.execute(
-                    "SELECT id, title, company, source, current_status, logged_at, ats_score FROM jobs "
-                    "WHERE lower(trim(company)) = lower(trim(%s)) "
-                    "AND lower(trim(title)) = lower(trim(%s)) ORDER BY id DESC LIMIT 1",
-                    (company, title),
+                    f"SELECT {_DUP_COLUMNS} FROM jobs "
+                    f"WHERE {_DUP_REAL_CARD} AND lower(trim(company)) = lower(trim(%s)) "
+                    "ORDER BY id DESC",
+                    (company,),
                 )
-                row = cur.fetchone()
-                if row:
-                    return dict(row)
+                wanted = _normalize_posting_title(title)
+                for row in cur.fetchall():
+                    if wanted and _normalize_posting_title(row["title"]) == wanted:
+                        return dict(row)
     finally:
         conn.close()
     return None

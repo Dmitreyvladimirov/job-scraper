@@ -294,3 +294,36 @@ def test_html_fallback_carries_no_location(monkeypatch, wired):
     monkeypatch.setattr(intake.utils, "fetch_url_generic", lambda url, max_chars=0: JD)
     result = intake.ingest("https://acme.com/careers/1")
     assert result.location == "Remote, EU"
+
+
+# --- duplicate probe normalisation (2026-08-23) ---------------------------------
+# db.find_manual_duplicate matched on exact strings, so one posting seen twice with
+# a different title suffix or a different tracking tail became two cards. These test
+# the normalisation only — the SQL around it needs a database.
+
+def test_title_suffix_does_not_make_a_new_vacancy():
+    """The live failure: FinAgra landed as two cards on 2026-08-23."""
+    from db import _normalize_posting_title as norm
+    assert norm("Senior Product Manager (FinAgra)") == norm("Senior Product Manager")
+    assert norm("Product Manager - Marketplace") == norm("product manager   marketplace")
+
+
+def test_genuinely_different_roles_stay_different():
+    # Adapty is hiring both; collapsing them would hide a real vacancy, which is a
+    # worse failure than a twin card.
+    from db import _normalize_posting_title as norm
+    assert norm("Head of Product") != norm("Product Lead, Analytics & ML")
+    assert norm("Partner Product Manager") != norm("Product Manager - Marketplace")
+
+
+def test_tracking_parameters_do_not_make_a_new_vacancy():
+    from db import _normalize_posting_url as norm
+    base = "https://finagra.com/careers"
+    assert norm(base + "?ashby_jid=badba632&utm_source=yr9PYa8Yz0") == base
+    assert norm(base + "/") == base
+    assert norm(None) == ""
+
+
+def test_different_postings_on_one_board_stay_different():
+    from db import _normalize_posting_url as norm
+    assert norm("https://jobs.ashbyhq.com/supabase/aaa") != norm("https://jobs.ashbyhq.com/supabase/bbb")
