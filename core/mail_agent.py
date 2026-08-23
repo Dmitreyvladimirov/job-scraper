@@ -29,7 +29,8 @@ import re
 import db
 import telegram
 from config import (
-    MAIL_AUTO_APPLY, MAIL_CLASSES, MAIL_MAX_PER_RUN, DESCRIPTION_MAX_CHARS,
+    MAIL_AUTO_APPLY, MAIL_CLASSES, MAIL_GMAIL_QUERY, MAIL_LABELS, MAIL_MAX_PER_RUN,
+    DESCRIPTION_MAX_CHARS,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,32 @@ _NEUTRAL_ATS_HOSTS = {
     "pinpoint.email", "paradox.ai", "brighthire.ai", "app.bamboohr.com", "ilucca.net",
     "invalidemail.com", "amazon.jobs", "mail.amazon.jobs",
 }
+
+# Never worth searching for: a placeholder sender, not a real ATS host.
+_QUERY_EXCLUDED_HOSTS = {"invalidemail.com"}
+
+
+def gmail_query(days: int) -> str:
+    """The Gmail search the sweep runs.
+
+    Built from the same _NEUTRAL_ATS_HOSTS list the company extraction uses, so the
+    two can never drift: every host that identifies an applicant-tracking system is
+    also a host worth reading mail from. Gmail matches a bare domain against its
+    subdomains too (tryhackme.teamtailor-mail.com matches teamtailor-mail.com),
+    which is what makes a ~19-domain list cover the long tail of ATS senders.
+
+    config.MAIL_GMAIL_QUERY overrides the whole thing when set.
+    """
+    if MAIL_GMAIL_QUERY:
+        # .replace, not .format: an override written in Gmail's own OR syntax
+        # contains literal braces ("{label:a label:b} newer_than:7d"), and .format
+        # would read those as replacement fields and raise KeyError on the query
+        # the operator is most likely to write.
+        return MAIL_GMAIL_QUERY.replace("{days}", str(days))
+    senders = " OR ".join(sorted(_NEUTRAL_ATS_HOSTS - _QUERY_EXCLUDED_HOSTS))
+    clauses = [f"from:({senders})"] + [f"label:{label}" for label in MAIL_LABELS]
+    return f"{{{' '.join(clauses)}}} newer_than:{days}d -in:draft -in:sent"
+
 
 # Subdomain labels that are infrastructure, not a company name.
 _NON_COMPANY_LABELS = {"no-reply", "noreply", "mail", "notifications", "careers",
@@ -200,9 +227,18 @@ def process(messages: list[dict], call_llm) -> dict:
     """One sweep. Returns counters for the Telegram summary. Never raises: a mail
     run must not be able to take anything else down."""
     stats = {"seen": 0, "duplicates": 0, "pending": 0, "ignored": 0, "unmatched": 0, "errors": 0}
-    for msg in messages[:MAIL_MAX_PER_RUN]:
+    batch = messages[:MAIL_MAX_PER_RUN]
+    # Ask once which of these are already recorded. The lookback window overlaps
+    # heavily between runs (7 days of mail, swept daily), so without this every
+    # message would be re-classified — and re-billed — on each of the seven runs it
+    # stays in the window. record_mail_event's ON CONFLICT stays as the race backstop.
+    already_seen = db.seen_mail_message_ids([m["message_id"] for m in batch])
+    for msg in batch:
         try:
             stats["seen"] += 1
+            if msg["message_id"] in already_seen:
+                stats["duplicates"] += 1
+                continue
             parsed, err = classify(msg, call_llm)
             if parsed is None:
                 stats["errors"] += 1
@@ -265,7 +301,7 @@ def run() -> dict:
     """Entry point for the Railway cron service. Never raises: this process failing
     must not be able to affect anything else, and a crash loop would be invisible."""
     import gmail_client
-    from config import MAIL_GMAIL_QUERY, MAIL_LOOKBACK_DAYS
+    from config import MAIL_LOOKBACK_DAYS
 
     try:
         cred = gmail_client.load_credential()
@@ -274,7 +310,7 @@ def run() -> dict:
             return {"error": "no_credential"}
         token = gmail_client.access_token(
             cred["client_id"], cred["client_secret"], cred["refresh_token"])
-        query = MAIL_GMAIL_QUERY.format(days=MAIL_LOOKBACK_DAYS)
+        query = gmail_query(MAIL_LOOKBACK_DAYS)
         messages = gmail_client.fetch_messages(token, query, limit=MAIL_MAX_PER_RUN)
     except gmail_client.GmailAuthError as e:
         # The one failure that must always be loud: dead auth is indistinguishable

@@ -17,7 +17,7 @@ requirements.md, SPEC.md, CONTEXT.md, SOURCES_DECISION.md, Design/*. Решен�
 | Скрапер | `JobScraper/core/` | Scrapper itself (cron `7 6,9,12,15 * * 1-5`) | Опрашивает источники, фильтрует, скорит, пишет в Postgres + Notion, шлёт Telegram-сводку |
 | Дашборд / фронтенд | `JobScraper/core/dashboard.py` + `core/templates/` | Dashboard (job-scraper) | Review, Kanban, Tracker, Add-job, очередь почты, статистика, Sources panel. FastAPI + Jinja2 + HTMX, cookie-сессия |
 | Внешний intake | `JobScraper/core/intake.py`, `core/tg_bot.py` | Dashboard (job-scraper) | Ручная отправка вакансии: `POST /api/intake` (bearer) и Telegram-бот (`POST /tg/{secret}`). Ссылка или текст → карточка → скоринг; резюме — по явной команде |
-| Почтовый агент | `JobScraper/core/mail_agent.py`, `core/gmail_client.py` | Mail agent (без крона) | Читает jobhunt-почту, предлагает смену статуса карточки. Сервис создан 23.08, спит до прохождения Gmail OAuth |
+| Почтовый агент | `JobScraper/core/mail_agent.py`, `core/gmail_client.py` | Mail agent (cron 2×/день, 7 дней) | Читает почту от ATS-отправителей, предлагает смену статуса карточки в очереди `/mail`. Ничего не применяет сам (`MAIL_AUTO_APPLY=False`) |
 | Scoring service | `resumebuilder-cloud/services/scoring/` | scoring | `POST /v1/score`, `/v1/score/batch`. Claude Haiku 4.5, та же 4-осевая рубрика |
 | Cards service | `resumebuilder-cloud/services/cards/` | cards | `POST /v1/cards` - Notion-карточка трекинга |
 | Resume service | `resumebuilder-cloud/services/resume/` | resume | `POST /v1/resume/generate`, `GET /v1/resume/runs/{id}/pdf`. 3 стадии: домен -> буллеты из банка -> сборка + Skeptic + PDF |
@@ -124,20 +124,30 @@ Telegram-сообщением (переживает early-return сводки п
 подтверждение. Это снимает противоречие с правилом "Never auto-transition" из
 `SPEC_FRONTEND.md` - авто-перехода нет.
 
-Сделано 2026-08-23: создан сервис «Mail agent» (`SERVICE_TYPE=mail`, restart
-policy NEVER, крона пока нет), `ANTHROPIC_API_KEY`/`DATABASE_URL`/Telegram
-выставлены референсами; первый запуск прислал в Telegram «нет Google-креденшла» -
-то есть сборка, БД и Telegram у сервиса работают. Таблицы `mail_event` и
-`google_credential` в проде проверены и существуют.
+РАЗВЁРНУТ 2026-08-23. OAuth переиспользован из проекта `sodium-wall-331321`
+(клиент `Dima/job-scraper` типа Desktop): Gmail API там уже был включён, publishing
+status уже In production. Верификация Google НЕ нужна и не проходилась - она
+требуется, чтобы убрать красный экран для чужих людей и обслуживать >100
+пользователей; владелец проходит экран через Advanced. Токен лежит зашифрованным
+в `google_credential`, ключ - `GMAIL_TOKEN_KEY` на сервисе.
 
-Осталось (требует браузера, за Дмитрием):
-- OAuth-приложение в Google Cloud Console: Gmail API, consent screen External и
-  **опубликованный** (в Testing refresh-токен умирает через 7 дней и это выглядит
-  как «мне никто не писал»), клиент типа Desktop app
-- `python scripts/mint_gmail_token.py` локально -> строка в `google_credential`;
-  напечатанный `GMAIL_TOKEN_KEY` + client id/secret выставить на сервисе
-- ярлык `jobhunt` в Gmail с фильтром (`MAIL_GMAIL_QUERY` по умолчанию)
-- после этого выставить сервису `cron_schedule` (7 дней в неделю)
+Три вещи, найденные при доведении (все починены):
+- ярлык `jobhunt` не существует, а все четыре реальных ярлыка дали 0 писем за 30
+  дней - запрос переведён на отправителей-ATS, см. «Как агент находит письма» ниже
+- дедуп срабатывал ПОСЛЕ вызова модели: при 7-дневном окне и суточном кроне каждое
+  письмо классифицировалось бы ~7 раз. `db.seen_mail_message_ids()` + пропуск до вызова
+- env-переопределение запроса падало на `.format()` о фигурные скобки Gmail-синтаксиса
+
+**Как агент находит письма.** `mail_agent.gmail_query()` строит запрос из того же
+`_NEUTRAL_ATS_HOSTS`, что используется для извлечения компании - два списка
+разъехаться не могут, и Gmail матчит поддомены (`tryhackme.teamtailor-mail.com` по
+`teamtailor-mail.com`). Плюс `label:עבודה` OR-веткой на случай ручной пометки:
+рекрутер, пишущий с личного адреса, - ровно то, что список отправителей не ловит.
+Побочный плюс - личная почта модели не показывается вообще.
+
+**Сухой прогон 23.08** (стабы вместо записи): 27 писем, 0 ошибок, 21 привязалось к
+карточкам, 4 без карточки, 6 отказов в pending. Последовательность TryHackMe
+(invite → scheduled → reminder) карточку вперёд не протащила.
 
 ### 7. Внешний intake - СДЕЛАН 2026-08-23
 

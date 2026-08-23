@@ -136,6 +136,7 @@ def test_non_json_reply_is_transient():
 # --- process(): batch resilience ---
 
 def test_batch_survives_a_failing_message(monkeypatch):
+    monkeypatch.setattr(mail_agent.db, "seen_mail_message_ids", lambda ids: set())
     monkeypatch.setattr(mail_agent.db, "find_cards_for_mail", lambda *a, **k: [_card()])
     monkeypatch.setattr(mail_agent.db, "add_comment", lambda *a: None)
     stored = []
@@ -154,6 +155,7 @@ def test_batch_survives_a_failing_message(monkeypatch):
 
 
 def test_duplicate_message_is_a_no_op(monkeypatch):
+    monkeypatch.setattr(mail_agent.db, "seen_mail_message_ids", lambda ids: set())
     monkeypatch.setattr(mail_agent.db, "find_cards_for_mail", lambda *a, **k: [_card()])
     commented = []
     monkeypatch.setattr(mail_agent.db, "add_comment", lambda *a: commented.append(a))
@@ -194,3 +196,50 @@ def test_unmatched_acknowledgement_is_not_queued():
 def test_unmatched_rejection_is_still_queued():
     out = mail_agent.decide("rejection", [])
     assert out["action"] == "pending" and out["job_id"] is None
+
+
+# --- the sweep query and its cost guard (2026-08-23) ---
+
+def test_query_is_built_from_the_ats_sender_list():
+    """The label the agent shipped with (`jobhunt`) never existed, and all four
+    labels Dimitry does have returned zero messages over 30 days — the sweep runs
+    off ATS sender domains instead."""
+    q = mail_agent.gmail_query(7)
+    assert "from:(" in q and "ashbyhq.com" in q and "greenhouse-mail.io" in q
+    assert "newer_than:7d" in q and "-in:draft" in q and "-in:sent" in q
+    assert "invalidemail.com" not in q, "a placeholder host is not a mail source"
+
+
+def test_query_keeps_the_hand_label_as_an_or_clause():
+    # Dead today, but a recruiter writing from a personal address is exactly what
+    # the sender list cannot catch — labelling one by hand must still work.
+    q = mail_agent.gmail_query(7)
+    assert "label:עבודה" in q
+    assert q.startswith("{") and "}" in q, "clauses must be OR-ed, not AND-ed"
+
+
+def test_known_message_is_never_classified_again(monkeypatch):
+    """The lookback window overlaps between runs; re-classifying costs money for a
+    row the DB would then reject anyway."""
+    calls = []
+    monkeypatch.setattr(mail_agent.db, "seen_mail_message_ids", lambda ids: {"m1"})
+    monkeypatch.setattr(mail_agent.db, "find_cards_for_mail", lambda *a, **k: [_card()])
+    monkeypatch.setattr(mail_agent.db, "record_mail_event",
+                        lambda e: calls.append("recorded") or {"id": 1, "duplicate": False})
+
+    def _llm(system, user):
+        calls.append("llm")
+        return '{"label": "rejection", "company": "Acme", "title": "Senior PM"}', {}
+
+    stats = mail_agent.process([{"message_id": "m1", "from_addr": "a@ashbyhq.com",
+                                 "subject": "Update", "excerpt": "no"}], _llm)
+    assert calls == [], "neither the model nor the database should have been touched"
+    assert stats["duplicates"] == 1 and stats["seen"] == 1
+
+
+def test_override_written_in_gmail_or_syntax_does_not_crash(monkeypatch):
+    """The natural way to hand-write this query uses Gmail's brace-OR syntax, which
+    str.format would parse as replacement fields."""
+    monkeypatch.setattr(mail_agent, "MAIL_GMAIL_QUERY",
+                        "{label:a label:b} newer_than:{days}d -in:sent")
+    assert mail_agent.gmail_query(3) == "{label:a label:b} newer_than:3d -in:sent"

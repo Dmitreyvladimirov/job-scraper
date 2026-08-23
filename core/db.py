@@ -677,6 +677,26 @@ def record_mail_event(event: dict) -> dict:
         conn.close()
 
 
+def seen_mail_message_ids(message_ids: list[str]) -> set[str]:
+    """Which of these emails are already in mail_event.
+
+    Exists so process() can skip them BEFORE classifying. record_mail_event's
+    ON CONFLICT already makes a replay a no-op in the database, but by then the
+    LLM call has been made and paid for - and with a 7-day lookback on a daily
+    cron, every message would otherwise be classified about seven times.
+    """
+    if not message_ids:
+        return set()
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT message_id FROM mail_event WHERE message_id = ANY(%s)",
+                        (list(message_ids),))
+            return {r["message_id"] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 def get_pending_mail_events(limit: int = 50) -> list[dict]:
     conn = _conn()
     try:

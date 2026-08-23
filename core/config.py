@@ -92,7 +92,23 @@ MAIL_CLASSES = {
 MAIL_AUTO_APPLY = False
 MAIL_MAX_PER_RUN = 50
 MAIL_LOOKBACK_DAYS = 7
-MAIL_GMAIL_QUERY = "label:jobhunt newer_than:{days}d -in:draft -in:sent"
+# How the sweep finds job mail. Set 2026-08-23 after measuring the alternatives on
+# the real mailbox: the `jobhunt` label never existed, and all four labels Dimitry
+# does have (עבודה, עבודהה, אבודה, "Работа / поиск") returned ZERO messages in the
+# last 30 days - they are historical, nothing applies them to incoming mail. A
+# sender-based query over the ATS hosts found 27 messages in 7 days and 160 in 90,
+# every one of them genuinely job-related. It also needs no filter discipline to
+# keep working, and it never sends personal mail to the model.
+#
+# Empty = mail_agent.gmail_query() builds it from mail_agent._NEUTRAL_ATS_HOSTS, so
+# the sender list has exactly one definition. Set the env var to override entirely
+# (must contain a {days} placeholder).
+MAIL_GMAIL_QUERY = os.environ.get("MAIL_GMAIL_QUERY", "")
+
+# Folded into the generated query alongside the ATS senders: dead today, but the
+# moment Dimitry labels a recruiter mail by hand it gets picked up, and a recruiter
+# writing from a personal address is exactly what the sender list cannot catch.
+MAIL_LABELS = ["עבודה"]
 MAIL_MODEL = "claude-haiku-4-5-20251001"
 
 # Resume-generation gates (Release 1, 2026-08-17). Lived in dashboard.py until the
