@@ -15,7 +15,9 @@ requirements.md, SPEC.md, CONTEXT.md, SOURCES_DECISION.md, Design/*. Решен�
 | Компонент | Где лежит | Railway-сервис | Что делает |
 |---|---|---|---|
 | Скрапер | `JobScraper/core/` | Scrapper itself (cron `7 6,9,12,15 * * 1-5`) | Опрашивает источники, фильтрует, скорит, пишет в Postgres + Notion, шлёт Telegram-сводку |
-| Дашборд / фронтенд | `JobScraper/core/dashboard.py` + `core/templates/` | Dashboard (job-scraper) | Review, Kanban, Tracker, Add-job, статистика, Sources panel. FastAPI + Jinja2 + HTMX, cookie-сессия |
+| Дашборд / фронтенд | `JobScraper/core/dashboard.py` + `core/templates/` | Dashboard (job-scraper) | Review, Kanban, Tracker, Add-job, очередь почты, статистика, Sources panel. FastAPI + Jinja2 + HTMX, cookie-сессия |
+| Внешний intake | `JobScraper/core/intake.py`, `core/tg_bot.py` | Dashboard (job-scraper) | Ручная отправка вакансии: `POST /api/intake` (bearer) и Telegram-бот (`POST /tg/{secret}`). Ссылка или текст → карточка → скоринг; резюме — по явной команде |
+| Почтовый агент | `JobScraper/core/mail_agent.py`, `core/gmail_client.py` | **нет сервиса** | Читает jobhunt-почту, предлагает смену статуса карточки. Код в main с 22.08, на Railway не развёрнут |
 | Scoring service | `resumebuilder-cloud/services/scoring/` | scoring | `POST /v1/score`, `/v1/score/batch`. Claude Haiku 4.5, та же 4-осевая рубрика |
 | Cards service | `resumebuilder-cloud/services/cards/` | cards | `POST /v1/cards` - Notion-карточка трекинга |
 | Resume service | `resumebuilder-cloud/services/resume/` | resume | `POST /v1/resume/generate`, `GET /v1/resume/runs/{id}/pdf`. 3 стадии: домен -> буллеты из банка -> сборка + Skeptic + PDF |
@@ -110,6 +112,51 @@ Telegram-сообщением (переживает early-return сводки п
 
 Удалить `core/ats.py`, `OPENAI_API_KEY` из `validate_secrets`, запись `RESUME_MD`
 в `run.sh`, Postgres-hQr0. Решить про отключение записи скрапера в Notion.
+
+### 6. Почтовый агент - КОД ГОТОВ, НЕ РАЗВЁРНУТ (2026-08-22)
+
+Три коммита в main (`f435879`, `7f51248`, `1bdd2b0`): таксономия из 9 классов
+(выведена разметкой ~80 реальных писем, а не угадана - гипотеза про 4 категории
+не подтвердилась), `core/mail_agent.py` + `core/gmail_client.py`, ветка `mail`
+в `run.sh`, очередь ревью `/mail` в дашборде, `scripts/mint_gmail_token.py`.
+Безопасность: LLM возвращает метку из закрытого множества, не статус; маппинг
+метка->переход - обычный Python; `MAIL_AUTO_APPLY = False`, всё через
+подтверждение. Это снимает противоречие с правилом "Never auto-transition" из
+`SPEC_FRONTEND.md` - авто-перехода нет.
+
+Чего не хватает до работы (ничего из этого не сделано):
+- Railway-сервиса `mail` не существует (в проекте 7 сервисов, mail среди них нет)
+- Gmail OAuth не пройден: `scripts/mint_gmail_token.py` не запускался, строки в
+  `google_credential` нет
+- `ANTHROPIC_API_KEY` не выставлен ни на одном сервисе JobScraper (есть только у
+  облачных scoring/resume) - без него `_call_claude` падает на KeyError
+- Ярлык `jobhunt` в Gmail (значение по умолчанию `MAIL_GMAIL_QUERY`) должен
+  существовать и наполняться фильтром
+
+### 7. Внешний intake - СДЕЛАН 2026-08-23
+
+Ручная отправка вакансии "куда угодно с телефона" - решения Дмитрия: транспорта
+два сразу, резюме только по явной команде, вход любой (ATS-ссылка, агрегатор,
+LinkedIn, текст).
+
+- `core/intake.py` - единственное место, где живёт логика: фетч (ATS API ->
+  обычный HTML -> ScrapingBee), извлечение title/company/location/salary через
+  Haiku, дедуп, карточка, скоринг. Оба транспорта - тонкие.
+- `core/tg_bot.py` + `POST /tg/{secret}` - бот принимает ссылку или текст,
+  отвечает скором по осям и кнопками "Сделать резюме" / "Перескорить", присылает
+  PDF файлом (не ссылкой - дашборд за логином).
+- `POST /api/intake` (bearer `DASHBOARD_TOKEN`) - тот же пайплайн для iOS
+  Shortcut и любых внешних вызовов; `POST /api/jobs/{id}/resume` - явная команда
+  на генерацию.
+- Гейт качества: JD короче `INTAKE_MIN_JD_CHARS = 400` не скорится вообще -
+  LinkedIn отдаёт логин-стену, SPA агрегатора отдаёт пустую оболочку, и то и
+  другое выглядит как "описание на 200 символов"; это ровно та инфляция коротких
+  JD, из-за которой сняли локальный скорер. Вместо оценки - просьба прислать
+  текст, ссылка запоминается на 30 минут и привязывается к карточке.
+- Резюме автоматически не генерится (решение Дмитрия 2026-08-23): ручная
+  отправка смещена в сторону вакансий, которые и так нравятся, - автогенерация
+  тратила бы на каждой.
+- Тесты: 25 новых в `tests/test_intake.py` + 10 маршрутных, вся сюита 218 зелёных.
 
 Артефакты трека: `db-backups/` в `/Users/DimaKu/Documents/Coding/db-backups`
 (дамп `jobscraper_pg_20260814_0320.dump` 50MB, `scoring_baseline_2026-08-14.md`,
@@ -232,15 +279,10 @@ Telegram-сообщением (переживает early-return сводки п
   `config.py`), куда пишутся результаты, чей бюджет GPT-вызовов. Требует
   отдельного раунда продакт/архитектор. Не путать с SPEC_FRONTEND - та спека
   solo-scoped. [ROADMAP.md, зафиксировано 2026-07-15]
-- **Gmail-агент - автодвижение карточек по статусам из писем рекрутеров.**
-  Читает входящие, двигает `current_status` (включая отказ), заодно меряет
-  time-to-response. Тянет: Gmail OAuth (новый тип интеграции), матчинг письмо ->
-  карточка по неструктурированному тексту, LLM-классификацию типа письма.
-  **Прямое противоречие**: `SPEC_FRONTEND.md` в секции "Never" запрещает
-  авто-переход `current_status` без явного действия пользователя - нужно решение,
-  расширять ли гарантию под "agent action". Ошибка тут дороже ошибки скоринга -
-  это неверный статус в реальном процессе поиска работы. [ROADMAP.md,
-  зафиксировано 2026-07-16]
+- ~~**Gmail-агент - автодвижение карточек по статусам из писем рекрутеров.**~~
+  РЕАЛИЗОВАН 2026-08-22, см. "Активный трек" п.6 (не развёрнут). Противоречие с
+  правилом "Never auto-transition" снято конструкцией: авто-перехода нет,
+  агент только предлагает, решение подтверждает Дмитрий в очереди `/mail`.
 - **Авторизация дашборда через Google-аккаунт вместо токена.** OAuth-приложение
   в Google Cloud Console, `/auth/google` + `/auth/google/callback`, allowlist из
   одного адреса, та же cookie-сессия. `authlib` закрывает компактно. Трейдофф
@@ -372,5 +414,9 @@ Classical.
 - Порог сигнала для `company_direct`: продакт предложил замерить через 2 месяца
   (<3 лида/месяц = список не тот), данных пока нет.
 - Строить ли telethon-путь ради 1 известного приватного канала.
-- Gmail-агент против правила "Never auto-transition" в `SPEC_FRONTEND.md`.
+- ~~Gmail-агент против правила "Never auto-transition"~~ - снято 2026-08-22:
+  агент только предлагает, применяет Дмитрий.
+- Когда разворачивать почтового агента (нужен сервис + Gmail OAuth + ключ Anthropic).
+- Нужен ли intake-путь для писем (переслать вакансию на адрес) - сейчас
+  транспорта два, почтовый третьим не делали.
 - Что делать с историей Notion-карточек при отключении записи.

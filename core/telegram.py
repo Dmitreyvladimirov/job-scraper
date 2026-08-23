@@ -87,3 +87,76 @@ def send_error(message: str) -> None:
         _send(f"⚠️ *Job Scraper error*\n\n{message}")
     except Exception as e:
         logger.error(f"Telegram: error alert failed: {e}")
+
+
+# --- Two-way bot: everything below is used by the intake webhook, not by the -------
+# --- scraper's one-way notifications above. -------------------------------------
+#
+# Deliberately plain text (no parse_mode) unlike the notifications above: a reply
+# echoes a scraped job title back at the user, and a title containing '*' or '_'
+# makes Telegram reject the whole message with a 400 on unparsable entities. Links
+# are auto-linked by the client anyway, so Markdown buys nothing here.
+
+def send_message(text: str, chat_id: str | int | None = None,
+                 reply_markup: dict | None = None) -> int | None:
+    """Plain-text message. Returns the sent message_id so a later call can edit it
+    in place (the bot answers "принял" first and rewrites that same message with the
+    verdict ~30 s later, instead of stacking three messages per vacancy)."""
+    body = {"chat_id": chat_id or TELEGRAM_CHAT_ID, "text": text,
+            "disable_web_page_preview": True}
+    if reply_markup:
+        body["reply_markup"] = reply_markup
+    result = _call("sendMessage", body)
+    return (result or {}).get("message_id")
+
+
+def edit_message(message_id: int, text: str, chat_id: str | int | None = None,
+                 reply_markup: dict | None = None) -> None:
+    """Rewrite a message already sent. A failure here is never fatal — worst case
+    the user keeps reading 'принял, работаю', so the caller falls back to a fresh
+    send_message() rather than losing the verdict."""
+    body = {"chat_id": chat_id or TELEGRAM_CHAT_ID, "message_id": message_id,
+            "text": text, "disable_web_page_preview": True}
+    if reply_markup:
+        body["reply_markup"] = reply_markup
+    _call("editMessageText", body)
+
+
+def answer_callback(callback_id: str, text: str = "") -> None:
+    """Stop the spinner on a tapped inline button. Telegram shows the button as
+    pending for ~15 s if this never arrives, which reads as a broken bot even when
+    the work behind it is running fine."""
+    _call("answerCallbackQuery", {"callback_query_id": callback_id, "text": text})
+
+
+def send_document(content: bytes, filename: str, caption: str = "",
+                  chat_id: str | int | None = None) -> None:
+    """Upload a file (the generated resume PDF) into the chat.
+
+    The PDF is sent as bytes rather than as a dashboard link on purpose: every
+    dashboard route is cookie-authenticated, so a link would make Dimitry log in on
+    the phone before he can look at what he just asked for.
+    """
+    import requests
+
+    requests.post(
+        f"{_API}/sendDocument",
+        data={"chat_id": chat_id or TELEGRAM_CHAT_ID, "caption": caption[:1024]},
+        files={"document": (filename, content, "application/pdf")},
+        timeout=60,
+    ).raise_for_status()
+
+
+def _call(method: str, body: dict) -> dict | None:
+    """One Bot API call. Returns the `result` object, or None on any failure — the
+    bot's job is to answer a human, and no reply is a better outcome than a 500
+    propagating out of a webhook handler Telegram will then retry."""
+    try:
+        payload = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(f"{_API}/{method}", data=payload)
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.loads(resp.read().decode("utf-8")).get("result")
+    except Exception as e:
+        logger.error(f"Telegram: {method} failed: {e}")
+        return None

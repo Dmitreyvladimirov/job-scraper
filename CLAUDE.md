@@ -26,13 +26,17 @@ Project notes for Claude Code sessions.
 ## Current workstreams
 
 See `PROJECT.md` → "Активный трек". Short version:
-1. Scoring cutover — DONE 2026-08-17; watch `ats_error` in the Telegram summary
-   for ~a day. Rollback: `USE_CLOUD_SCORING=shadow` + revert threshold commit.
-2. Release 1 resume features — DONE 2026-08-17 (tests green, not yet clicked
-   through live): Generate-resume button, /jobs/{id}/resume-pdf, auto-score on
-   Add-job, Re-score in duplicate dialog.
-3. Release 2 auto-generation (score ≥80 gates, confirmed 2026-08-17) — next.
-4. Phase 4 input-data fixes, Phase 5 cleanup (~2026-08-28).
+1. Scoring cutover, Release 1, Release 2, Phase 4, company_direct — all DONE and
+   live. Rollback for scoring: `USE_CLOUD_SCORING=shadow` + revert threshold commit.
+2. **Two finished features are waiting on deployment, not on code:**
+   - External intake (2026-08-23): `core/intake.py` + `core/tg_bot.py`,
+     `POST /api/intake`, `POST /tg/{secret}`. Needs 5 env vars on the Dashboard
+     service and one run of `scripts/set_telegram_webhook.py`.
+   - Mail agent (2026-08-22): `core/mail_agent.py`. Needs its own Railway cron
+     service (`SERVICE_TYPE=mail`), Gmail OAuth via `scripts/mint_gmail_token.py`,
+     and an `ANTHROPIC_API_KEY` — which no JobScraper service currently has.
+3. Phase 5 cleanup (~2026-08-28): drop `core/ats.py`, `OPENAI_API_KEY`,
+   `RESUME_MD` in `run.sh`, Postgres-hQr0; decide on the Notion write.
 
 ## Working rules
 

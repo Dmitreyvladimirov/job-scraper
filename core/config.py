@@ -95,6 +95,33 @@ MAIL_LOOKBACK_DAYS = 7
 MAIL_GMAIL_QUERY = "label:jobhunt newer_than:{days}d -in:draft -in:sent"
 MAIL_MODEL = "claude-haiku-4-5-20251001"
 
+# Resume-generation gates (Release 1, 2026-08-17). Lived in dashboard.py until the
+# intake path needed the same numbers - the bot, the HTTP endpoint and the dashboard
+# button must refuse identically, or the same card generates from one surface and is
+# blocked from another.
+RESUME_MIN_JD_CHARS = 200
+
+# Intake (2026-08-23): the external entry point - a vacancy Dimitry sends by hand
+# from the phone (Telegram bot) or from any outside tool (POST /api/intake),
+# instead of one a scraper run found. Both transports share core/intake.py.
+#
+# Below this many characters a "job description" is a listing stub or a login wall
+# (LinkedIn serves one to every logged-out fetch), and scoring it produces the
+# short-JD inflation the local scorer was retired for. Intake refuses instead and
+# asks for the pasted text. 400 sits below the shortest real JD seen in the corpus
+# (~900 chars) and above every stub.
+INTAKE_MIN_JD_CHARS = 400
+
+# Title/company/location are read out of the JD text by Haiku: an ATS API gives a
+# title but only a board slug for the company, an aggregator page gives neither,
+# and a pasted text gives nothing structured at all. One call, ~$0.0005.
+INTAKE_META_MODEL = "claude-haiku-4-5-20251001"
+
+# Shared secret in the webhook path AND in Telegram's X-Telegram-Bot-Api-Secret-Token
+# header. Unset = the webhook route answers 503 and the bot simply does not work;
+# it is never allowed to fall open, since this route is unauthenticated by nature.
+TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+
 # Phase 4 (2026-08-19): the single storage truncation limit for job descriptions.
 # The cloud scorer receives the full text BEFORE this truncation and applies its
 # own prompt-side limit — this constant only bounds what Postgres keeps (and thus

@@ -597,3 +597,86 @@ def test_mail_dismiss_needs_no_card(monkeypatch):
                         lambda *a, **k: {"event_id": 7, "action": "dismissed"})
     r = _authenticated_client().post("/mail/events/7/resolve", data={"action": "dismissed"})
     assert r.status_code == 200 and "пропущено" in r.text
+
+
+# --- Intake endpoints (2026-08-23) ----------------------------------------------
+# The bearer-auth checks never touch the DB or the cloud services; the webhook tests
+# monkeypatch tg_bot.start so no thread and no scoring call is ever spawned.
+
+def test_intake_requires_bearer():
+    assert _anon_client().post("/api/intake", json={"text": "x"}).status_code == 401
+
+
+def test_intake_rejects_an_empty_body():
+    r = _anon_client().post("/api/intake", json={},
+                            headers={"Authorization": f"Bearer {TOKEN}"})
+    assert r.status_code == 422
+
+
+def test_intake_returns_the_verdict(monkeypatch):
+    import intake as intake_module
+    monkeypatch.setattr(dashboard.intake, "ingest", lambda raw, **kw: intake_module.IntakeResult(
+        status="need_text", url="https://www.linkedin.com/jobs/view/1",
+        message="пришли текст вакансии"))
+    r = _anon_client().post("/api/intake", json={"url": "https://www.linkedin.com/jobs/view/1"},
+                            headers={"Authorization": f"Bearer {TOKEN}"})
+    # 200, not an HTTP error: "paste the description" is an answer a Shortcut can act on.
+    assert r.status_code == 200
+    assert r.json()["status"] == "need_text"
+
+
+def test_intake_passes_the_url_along_when_text_is_also_sent(monkeypatch):
+    seen = {}
+
+    def _ingest(raw, **kwargs):
+        seen.update(raw=raw, **kwargs)
+        import intake as intake_module
+        return intake_module.IntakeResult(status="ok", job_id=1, score=80)
+
+    monkeypatch.setattr(dashboard.intake, "ingest", _ingest)
+    r = _anon_client().post(
+        "/api/intake", json={"url": "https://acme.com/1", "text": "full jd text"},
+        headers={"Authorization": f"Bearer {TOKEN}"})
+    assert r.status_code == 200
+    assert seen["raw"] == "full jd text"
+    assert seen["url_hint"] == "https://acme.com/1"
+
+
+def test_api_resume_requires_bearer():
+    assert _anon_client().post("/api/jobs/1/resume").status_code == 401
+
+
+def test_api_resume_reports_a_blocked_card(monkeypatch):
+    monkeypatch.setattr(dashboard.intake, "generate_resume",
+                        lambda job_id: (None, "Company is required"))
+    r = _anon_client().post("/api/jobs/1/resume", headers={"Authorization": f"Bearer {TOKEN}"})
+    assert r.status_code == 422
+
+
+def test_webhook_without_a_secret_configured_is_503(monkeypatch):
+    monkeypatch.setattr(dashboard, "TELEGRAM_WEBHOOK_SECRET", "")
+    r = _anon_client().post("/tg/anything", json={})
+    assert r.status_code == 503, "an unset secret must never fall open"
+
+
+def test_webhook_rejects_a_wrong_path_secret(monkeypatch):
+    monkeypatch.setattr(dashboard, "TELEGRAM_WEBHOOK_SECRET", "s3cret")
+    r = _anon_client().post("/tg/wrong", json={},
+                            headers={"X-Telegram-Bot-Api-Secret-Token": "s3cret"})
+    assert r.status_code == 403
+
+
+def test_webhook_rejects_a_missing_header_secret(monkeypatch):
+    # Path-only auth would leak through every log and proxy that records URLs.
+    monkeypatch.setattr(dashboard, "TELEGRAM_WEBHOOK_SECRET", "s3cret")
+    assert _anon_client().post("/tg/s3cret", json={}).status_code == 403
+
+
+def test_webhook_acknowledges_before_working(monkeypatch):
+    handed = {}
+    monkeypatch.setattr(dashboard, "TELEGRAM_WEBHOOK_SECRET", "s3cret")
+    monkeypatch.setattr(dashboard.tg_bot, "start", lambda update: handed.update(update))
+    r = _anon_client().post("/tg/s3cret", json={"message": {"text": "hi"}},
+                            headers={"X-Telegram-Bot-Api-Secret-Token": "s3cret"})
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    assert handed["message"]["text"] == "hi"

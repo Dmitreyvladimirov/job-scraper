@@ -22,9 +22,14 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import db
+import intake
 import resume_client
 import scoring_client
-from config import CURRENT_STATUSES, DOMAIN_COLORS, FUNNEL_ORDER, REJECTION_REASON_LABELS, USER_REJECTION_REASONS
+import tg_bot
+from config import (
+    CURRENT_STATUSES, DOMAIN_COLORS, FUNNEL_ORDER, REJECTION_REASON_LABELS,
+    TELEGRAM_WEBHOOK_SECRET, USER_REJECTION_REASONS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -453,19 +458,11 @@ def kanban(
     })
 
 
-RESUME_MIN_JD_CHARS = 200
-
-
-def _resume_block_reason(job: dict) -> str | None:
-    """Release-1 generation gates. The resume service would happily generate from a
-    bare title, but the output files by company and tailors by JD text — so both are
-    quality gates here, not service requirements. The template disables the button
-    with this exact reason; the 422 in the route is the backstop for direct callers."""
-    if not (job.get("company") or "").strip():
-        return "Company is required — the resume is titled and filed by company"
-    if len(job.get("description") or "") < RESUME_MIN_JD_CHARS:
-        return f"JD is under {RESUME_MIN_JD_CHARS} chars — paste the full description first"
-    return None
+# One definition of the generation gates for every surface (dashboard button, bot
+# button, POST /api/jobs/{id}/resume) — see intake.resume_block_reason. The template
+# disables the button with this exact reason; the 422 in the route below is the
+# backstop for direct callers.
+_resume_block_reason = intake.resume_block_reason
 
 
 def _resume_slot_context(job: dict, error: str | None = None) -> dict:
@@ -926,6 +923,118 @@ def api_create_job(payload: ApiJobPayload, request: Request):
         "status": transition["new_status"],
         "previous_status": transition["old_status"],
     })
+
+
+class ApiIntakePayload(BaseModel):
+    """Body of POST /api/intake — one vacancy sent in from outside the pipeline.
+
+    Exactly one of url/text is expected; both are accepted (a caller that has the
+    link AND the text, e.g. an iOS Shortcut grabbing the page it is sharing, gets
+    the best of both: the text is used, the link is attached to the card).
+    """
+
+    url: str | None = None
+    text: str | None = None
+    force: bool = False
+    source: str = "Manual (API)"
+
+
+@app.post("/api/intake")
+def api_intake(payload: ApiIntakePayload, request: Request):
+    """The external entry point: URL or pasted JD in, scored card out.
+
+    Synchronous, unlike the Add-job form's background scoring — the caller here is
+    a script or a Shortcut that wants the verdict as its answer, not a card that
+    quietly acquires a score a minute later. Budget ~10-40 s.
+
+    Resume generation is deliberately NOT part of this call (Dimitry, 2026-08-23):
+    POST /api/jobs/{id}/resume is the explicit second step.
+    """
+    _authenticate_bearer(request)
+    raw = (payload.text or "").strip() or (payload.url or "").strip()
+    if not raw:
+        raise HTTPException(status_code=422, detail="Send either url or text")
+
+    url_hint = (payload.url or "").strip() or None
+    result = intake.ingest(
+        raw, source=payload.source.strip() or "Manual (API)", force=payload.force,
+        # A caller that sent both fields is pasting text for a known link; the link
+        # then rides along as the card's URL instead of being thrown away.
+        url_hint=url_hint if (payload.text or "").strip() else None,
+    )
+
+    body = {
+        "status": result.status,
+        "job_id": result.job_id,
+        "created": result.created,
+        "title": result.title,
+        "company": result.company,
+        "location": result.location,
+        "url": result.url,
+        "score": result.score,
+        "message": result.message,
+        "resume_blocked": result.resume_blocked,
+    }
+    if result.result is not None:
+        r = result.result
+        body["breakdown"] = {
+            "role": r.role_score, "domain": r.domain_score, "keywords": r.keyword_score,
+            "location": r.location_score, "penalty": r.penalty,
+            "why_apply": r.why_apply, "why_not": r.why_not,
+            "matched": r.matched, "missed": r.missed, "domain_label": r.domain,
+        }
+    if result.status == "duplicate" and result.existing:
+        body["existing"] = {k: str(v) for k, v in result.existing.items()}
+    # 200 for every outcome the pipeline understands, including "need_text" and
+    # "duplicate": those are answers, not failures, and a Shortcut showing an HTTP
+    # error instead of "paste the description" would be a worse tool.
+    return JSONResponse(body)
+
+
+@app.post("/api/jobs/{job_id}/resume")
+def api_generate_resume(job_id: int, request: Request):
+    """Explicit resume generation for an existing card — the machine twin of the
+    peek modal's button and of the bot's. Idempotent: a card that already has a
+    resume returns the same run id without paying twice."""
+    _authenticate_bearer(request)
+    resume_run_id, error = intake.generate_resume(job_id)
+    if error:
+        raise HTTPException(status_code=422, detail=error)
+    return JSONResponse({
+        "job_id": job_id,
+        "resume_run_id": resume_run_id,
+        "skeptic_findings": db.get_resume_skeptic_count(resume_run_id),
+        "pdf_url": f"/jobs/{job_id}/resume-pdf",
+    })
+
+
+@app.post("/tg/{secret}")
+async def telegram_webhook(secret: str, request: Request):
+    """Telegram bot webhook — the phone-shaped door into the same intake pipeline.
+
+    Answers 200 before doing any work on purpose: Telegram re-delivers an update it
+    has not seen acknowledged within seconds, and one intake takes 10-40 s, so
+    replying late would process every vacancy two or three times over.
+
+    Two independent checks, because this route cannot be cookie- or bearer-
+    authenticated (Telegram decides what it sends): the secret in the path, and the
+    secret Telegram echoes in X-Telegram-Bot-Api-Secret-Token. The chat allowlist in
+    tg_bot._allowed() is the third. An unset secret answers 503 rather than falling
+    open — this is the one route on the service that is reachable without a login.
+    """
+    if not TELEGRAM_WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="TELEGRAM_WEBHOOK_SECRET not set")
+    header = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if not (hmac.compare_digest(secret, TELEGRAM_WEBHOOK_SECRET)
+            and hmac.compare_digest(header, TELEGRAM_WEBHOOK_SECRET)):
+        raise HTTPException(status_code=403, detail="Bad webhook secret")
+
+    try:
+        update = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Malformed update")
+    tg_bot.start(update)
+    return JSONResponse({"ok": True})
 
 
 @app.get("/jobs/bulk-reject-form", response_class=HTMLResponse)

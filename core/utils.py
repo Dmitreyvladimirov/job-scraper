@@ -237,8 +237,27 @@ def find_apply_url(company: str, title: str) -> str | None:
 
 def fetch_jd_from_url(url: str) -> str:
     """Fetch full job description from a direct Greenhouse / Lever / Ashby URL."""
+    return fetch_posting(url).get("description", "")
+
+
+def fetch_posting(url: str) -> dict:
+    """Description PLUS the title the ATS already knows, for a direct Greenhouse /
+    Lever / Ashby URL.
+
+    The scraper only ever needed the text, and fetch_jd_from_url() above stays its
+    unchanged entry point. The intake path (intake.py) also needs a title, and all
+    three posting APIs return one in the same response - re-fetching the page
+    afterwards just to scrape <title> would be slower and less accurate.
+
+    Company is deliberately NOT returned: none of the three APIs carries a real
+    company name, only the board slug ("thecompany" for Acme Inc.), so intake
+    extracts the true name from the JD text instead of trusting a slug.
+
+    Returns {} for a non-platform URL or any failure - callers fall back to
+    fetch_url_generic().
+    """
     if not url:
-        return ""
+        return {}
     try:
         if "jobs.lever.co" in url:
             parts = url.rstrip("/").split("/")
@@ -246,7 +265,11 @@ def fetch_jd_from_url(url: str) -> str:
             r = requests.get(f"https://api.lever.co/v0/postings/{company}/{uuid}", timeout=8)
             if r.status_code == 200:
                 data = r.json()
-                return strip_html(data.get("descriptionPlain") or data.get("description") or "")
+                return {
+                    "description": strip_html(
+                        data.get("descriptionPlain") or data.get("description") or ""),
+                    "title": (data.get("text") or "").strip(),
+                }
 
         elif "boards.greenhouse.io" in url or "boards-api.greenhouse.io" in url:
             parts = url.rstrip("/").split("/")
@@ -256,8 +279,12 @@ def fetch_jd_from_url(url: str) -> str:
                 timeout=8,
             )
             if r.status_code == 200:
-                # Greenhouse returns HTML-entity-encoded content — unescape before stripping tags
-                return strip_html(unescape(r.json().get("content") or ""))
+                data = r.json()
+                return {
+                    # Greenhouse returns HTML-entity-encoded content - unescape before stripping tags
+                    "description": strip_html(unescape(data.get("content") or "")),
+                    "title": (data.get("title") or "").strip(),
+                }
 
         elif "jobs.ashbyhq.com" in url:
             parts = url.rstrip("/").split("/")
@@ -270,20 +297,23 @@ def fetch_jd_from_url(url: str) -> str:
                         "query ApiJobPosting($organizationHostedJobsPageName: String!, $jobPostingId: String!) {"
                         "  jobPosting(organizationHostedJobsPageName: $organizationHostedJobsPageName,"
                         "             jobPostingId: $jobPostingId) {"
-                        "    descriptionSections { descriptionHtml } } }"
+                        "    title descriptionSections { descriptionHtml } } }"
                     ),
                     "variables": {"organizationHostedJobsPageName": company, "jobPostingId": job_id},
                 },
                 timeout=8,
             )
             if r.status_code == 200:
-                sections = (
-                    r.json().get("data", {}).get("jobPosting", {}).get("descriptionSections") or []
-                )
-                return strip_html(" ".join(s.get("descriptionHtml", "") for s in sections))
+                posting = r.json().get("data", {}).get("jobPosting") or {}
+                sections = posting.get("descriptionSections") or []
+                return {
+                    "description": strip_html(
+                        " ".join(s.get("descriptionHtml", "") for s in sections)),
+                    "title": (posting.get("title") or "").strip(),
+                }
     except Exception as e:
-        logger.debug(f"fetch_jd_from_url failed for {url}: {e}")
-    return ""
+        logger.debug(f"fetch_posting failed for {url}: {e}")
+    return {}
 
 
 def _extract_direct_anchor(url: str) -> str | None:
