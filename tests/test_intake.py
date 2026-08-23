@@ -256,3 +256,21 @@ def test_render_need_text_has_no_buttons():
     text, markup = tg_bot._render(
         intake.IntakeResult(status="need_text", message="пришли текст вакансии"))
     assert markup is None and "текст" in text
+
+
+def test_bot_reports_a_crash_instead_of_hanging(monkeypatch):
+    """A DB failure under intake must rewrite the placeholder, not leave the user
+    staring at "принял, разбираю…" — a hung bot is indistinguishable from a slow one."""
+    sent = []
+    monkeypatch.setattr(tg_bot, "TELEGRAM_CHAT_ID", "1")
+    monkeypatch.setattr(tg_bot.telegram, "send_message",
+                        lambda text, chat_id=None, reply_markup=None: sent.append(text) or 100)
+    monkeypatch.setattr(tg_bot.telegram, "edit_message",
+                        lambda mid, text, chat_id=None, reply_markup=None: sent.append(text))
+
+    def _boom(raw, **kwargs):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(tg_bot.intake, "ingest", _boom)
+    tg_bot._handle_message({"chat": {"id": 1}, "text": "a" * 500})
+    assert "Сломалось на разборе" in sent[-1] and "connection refused" in sent[-1]

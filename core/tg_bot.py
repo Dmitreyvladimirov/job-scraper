@@ -85,7 +85,16 @@ def _handle_message(message: dict) -> None:
 
     progress_id = telegram.send_message("Принял, разбираю…", chat_id)
     url_hint = _take_pending_url(chat_id)
-    result = intake.ingest(raw, source=INTAKE_SOURCE, url_hint=url_hint)
+    try:
+        result = intake.ingest(raw, source=INTAKE_SOURCE, url_hint=url_hint)
+    except Exception as e:
+        # intake.ingest promises not to raise, but the DB underneath it can. Letting
+        # the exception reach handle_update()'s catch-all would leave "принял,
+        # разбираю…" standing forever, which reads as a hung bot rather than a
+        # failed call — so the placeholder always gets rewritten with the reason.
+        logger.exception("tg_bot: intake failed")
+        _reply(chat_id, progress_id, f"Сломалось на разборе: {str(e)[:300]}")
+        return
 
     if result.status == "need_text":
         _pending_url[chat_id] = (result.url, time.time())
