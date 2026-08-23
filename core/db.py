@@ -1336,7 +1336,12 @@ def get_tracker_series(date_from: str | None = None, date_to: str | None = None)
     events that week (changed_at) — an event-based read, not "jobs currently at X",
     so a job that applied then got rejected still shows up in the week it applied.
     date_from/date_to scope the chart; the summary totals (reply rate, median time
-    to reply) are always all-time, matching the legend chips in the mock."""
+    to reply) are always all-time, matching the legend chips in the mock.
+
+    Weeks start on SUNDAY (Dimitry, 2026-08-23), not on Postgres' ISO Monday:
+    the working week here is Sunday-Thursday, so a Monday bucket splits it and a
+    Sunday's applications land in the previous week's column. _WEEK is the shift
+    that does it -- truncate a day later, then step a day back."""
 
     def _date_cond(col: str) -> tuple[str, list]:
         conds, params = [], []
@@ -1348,25 +1353,29 @@ def get_tracker_series(date_from: str | None = None, date_to: str | None = None)
             params.append(date_to)
         return (" AND " + " AND ".join(conds)) if conds else "", params
 
+    # Sunday-start week bucket: DATE_TRUNC('week', x) is ISO and lands on Monday.
+    def _week(col: str) -> str:
+        return f"(DATE_TRUNC('week', {col} + INTERVAL '1 day') - INTERVAL '1 day')"
+
     conn = _conn()
     try:
         with conn.cursor() as cur:
             cond, params = _date_cond("logged_at")
             cur.execute(
-                f"SELECT DATE_TRUNC('week', logged_at) as week, COUNT(*) as cnt "
+                f"SELECT {_week('logged_at')} as week, COUNT(*) as cnt "
                 f"FROM jobs WHERE outcome='qualified'{cond} GROUP BY week ORDER BY week", params,
             )
             found = {str(r["week"])[:10]: r["cnt"] for r in cur.fetchall()}
 
             cond, params = _date_cond("changed_at")
             cur.execute(
-                f"SELECT DATE_TRUNC('week', changed_at) as week, COUNT(*) as cnt "
+                f"SELECT {_week('changed_at')} as week, COUNT(*) as cnt "
                 f"FROM status_log WHERE new_status='applied'{cond} GROUP BY week ORDER BY week", params,
             )
             applied = {str(r["week"])[:10]: r["cnt"] for r in cur.fetchall()}
 
             cur.execute(
-                f"SELECT DATE_TRUNC('week', changed_at) as week, COUNT(*) as cnt "
+                f"SELECT {_week('changed_at')} as week, COUNT(*) as cnt "
                 f"FROM status_log WHERE new_status='recruiter_reply'{cond} GROUP BY week ORDER BY week", params,
             )
             replies = {str(r["week"])[:10]: r["cnt"] for r in cur.fetchall()}
