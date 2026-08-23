@@ -103,11 +103,11 @@ def ingest(raw: str, *, source: str = "Manual", force: bool = False,
         return IntakeResult(status="error", message="Пустое сообщение")
 
     url = url_hint
-    title_hint = ""
+    hints: dict = {}
 
     if looks_like_url(raw):
         url = raw
-        jd, title_hint, why = _fetch_jd(url)
+        jd, hints, why = _fetch_jd(url)
         if not jd:
             return IntakeResult(status="need_text", url=url, message=why)
     else:
@@ -119,9 +119,14 @@ def ingest(raw: str, *, source: str = "Manual", force: bool = False,
             )
 
     jd = jd[:DESCRIPTION_MAX_CHARS]
+    title_hint = hints.get("title") or ""
     meta = _extract_meta(jd, title_hint=title_hint, url=url)
     title = meta.get("title") or title_hint or "Untitled vacancy"
     company = meta.get("company") or None
+    # A location the job board states outright beats one the model read out of
+    # prose -- it is 15 of the 100 scoring points, and the earlier pipeline already
+    # lost a whole rubric axis by computing location and then dropping it.
+    location = hints.get("location") or meta.get("location") or None
 
     existing = db.find_manual_duplicate(url, company, title)
     if existing and not force:
@@ -138,7 +143,7 @@ def ingest(raw: str, *, source: str = "Manual", force: bool = False,
         "apply_url": url,
         "source": source,
         "salary": meta.get("salary") or None,
-        "location": meta.get("location") or None,
+        "location": location,
         "description": jd,
         "published": None,
     })
@@ -150,7 +155,7 @@ def ingest(raw: str, *, source: str = "Manual", force: bool = False,
         logger.error(f"intake: scoring failed for job {job_id} ({error_kind})")
         return IntakeResult(
             status="scored_off", job_id=job_id, created=True, title=title,
-            company=company, location=meta.get("location"), url=url,
+            company=company, location=location, url=url,
             message=("Скоринг не сработал (конфиг сервиса)" if error_kind == "config"
                      else "Скоринг не сработал — карточка создана, можно перескорить в дашборде"),
         )
@@ -159,7 +164,7 @@ def ingest(raw: str, *, source: str = "Manual", force: bool = False,
     job["ats_score"] = result.score
     return IntakeResult(
         status="ok", job_id=job_id, created=True, title=title, company=company,
-        location=meta.get("location"), url=url, score=result.score, result=result,
+        location=location, url=url, score=result.score, result=result,
         resume_blocked=resume_block_reason(job),
     )
 
@@ -226,8 +231,12 @@ def rescore(job_id: int) -> tuple[object | None, str | None]:
     return result, None
 
 
-def _fetch_jd(url: str) -> tuple[str, str, str]:
-    """(jd_text, title_hint, why_empty) for a job URL, cheapest source first.
+def _fetch_jd(url: str) -> tuple[str, dict, str]:
+    """(jd_text, hints, why_empty) for a job URL, cheapest source first.
+
+    `hints` carries whatever the board stated itself -- title always, location when
+    the board's API gives one -- and is empty for the HTML fallbacks, which know
+    nothing beyond the text.
 
     Three escalating attempts: the ATS posting API (free, exact, has a title), a
     plain HTML fetch (free, works on server-rendered pages), then ScrapingBee
@@ -235,30 +244,31 @@ def _fetch_jd(url: str) -> tuple[str, str, str]:
     aggregator SPA). Each is skipped once an earlier one produced enough text.
     """
     if not utils._validate_url(url):
-        return "", "", "Ссылка не открывается (или ведёт во внутреннюю сеть)"
+        return "", {}, "Ссылка не открывается (или ведёт во внутреннюю сеть)"
 
     if utils._url_host_matches(url, _LOGIN_WALLED):
         host = url.split("/")[2] if "/" in url[8:] else url
-        return "", "", (f"{host} отдаёт описание только авторизованным — "
+        return "", {}, (f"{host} отдаёт описание только авторизованным — "
                         "пришли текст вакансии сообщением, ссылку я привяжу к карточке")
 
     posting = utils.fetch_posting(url)
-    jd, title_hint = posting.get("description", ""), posting.get("title", "")
+    hints = {k: v for k, v in posting.items() if k in ("title", "location") and v}
+    jd = posting.get("description", "")
     if len(jd) >= INTAKE_MIN_JD_CHARS:
-        return jd, title_hint, ""
+        return jd, hints, ""
 
     generic = utils.fetch_url_generic(url, max_chars=DESCRIPTION_MAX_CHARS)
     if len(generic) >= INTAKE_MIN_JD_CHARS:
-        return generic, title_hint, ""
+        return generic, hints, ""
 
     html = utils._fetch_via_scrapingbee(url)
     if html:
         rendered = utils.strip_html(html)[:DESCRIPTION_MAX_CHARS]
         if len(rendered) >= INTAKE_MIN_JD_CHARS:
-            return rendered, title_hint, ""
+            return rendered, hints, ""
 
-    return "", title_hint, ("По ссылке не нашлось описания вакансии — "
-                            "пришли текст сообщением, ссылку я привяжу к карточке")
+    return "", hints, ("По ссылке не нашлось описания вакансии — "
+                       "пришли текст сообщением, ссылку я привяжу к карточке")
 
 
 _META_SYSTEM = """You extract structured fields from a job posting. Answer with a single

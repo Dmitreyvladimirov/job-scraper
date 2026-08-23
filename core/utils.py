@@ -253,6 +253,10 @@ def fetch_posting(url: str) -> dict:
     company name, only the board slug ("thecompany" for Acme Inc.), so intake
     extracts the true name from the JD text instead of trusting a slug.
 
+    "location" is present only for Ashby, whose board endpoint states it outright.
+    It is worth threading through: location is 15 of the 100 scoring points, and an
+    authoritative value beats one the model infers from prose.
+
     Returns {} for a non-platform URL or any failure - callers fall back to
     fetch_url_generic().
     """
@@ -287,30 +291,27 @@ def fetch_posting(url: str) -> dict:
                 }
 
         elif "jobs.ashbyhq.com" in url:
+            # Ashby's posting-api/graphql endpoint started answering 401 to
+            # unauthenticated callers (confirmed 2026-08-23 on a live posting, with
+            # and without the `title` field, so it is the endpoint and not the
+            # query). The documented public board endpoint still works and is
+            # strictly better: it returns descriptionPlain already as text, plus the
+            # title and location the GraphQL query never carried. One extra board
+            # fetch per posting is the cost; boards are small (16 jobs here).
             parts = url.rstrip("/").split("/")
             company, job_id = parts[-2], parts[-1]
-            r = requests.post(
-                "https://api.ashbyhq.com/posting-api/graphql",
-                json={
-                    "operationName": "ApiJobPosting",
-                    "query": (
-                        "query ApiJobPosting($organizationHostedJobsPageName: String!, $jobPostingId: String!) {"
-                        "  jobPosting(organizationHostedJobsPageName: $organizationHostedJobsPageName,"
-                        "             jobPostingId: $jobPostingId) {"
-                        "    title descriptionSections { descriptionHtml } } }"
-                    ),
-                    "variables": {"organizationHostedJobsPageName": company, "jobPostingId": job_id},
-                },
-                timeout=8,
-            )
+            r = requests.get(
+                f"https://api.ashbyhq.com/posting-api/job-board/{company}", timeout=10)
             if r.status_code == 200:
-                posting = r.json().get("data", {}).get("jobPosting") or {}
-                sections = posting.get("descriptionSections") or []
-                return {
-                    "description": strip_html(
-                        " ".join(s.get("descriptionHtml", "") for s in sections)),
-                    "title": (posting.get("title") or "").strip(),
-                }
+                for posting in r.json().get("jobs", []):
+                    if posting.get("id") != job_id:
+                        continue
+                    body = posting.get("descriptionPlain") or posting.get("descriptionHtml") or ""
+                    return {
+                        "description": strip_html(body),
+                        "title": (posting.get("title") or "").strip(),
+                        "location": (posting.get("location") or "").strip(),
+                    }
     except Exception as e:
         logger.debug(f"fetch_posting failed for {url}: {e}")
     return {}

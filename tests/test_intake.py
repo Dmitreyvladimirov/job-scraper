@@ -274,3 +274,23 @@ def test_bot_reports_a_crash_instead_of_hanging(monkeypatch):
     monkeypatch.setattr(tg_bot.intake, "ingest", _boom)
     tg_bot._handle_message({"chat": {"id": 1}, "text": "a" * 500})
     assert "Сломалось на разборе" in sent[-1] and "connection refused" in sent[-1]
+
+
+def test_board_location_beats_the_models_guess(monkeypatch, wired):
+    """Ashby's board API states the location outright; location is 15 of the 100
+    scoring points, and the pipeline has lost a whole rubric axis this way before."""
+    monkeypatch.setattr(intake.utils, "_validate_url", lambda url: True)
+    monkeypatch.setattr(intake.utils, "fetch_posting", lambda url: {
+        "description": JD, "title": "TPM, Data Ingestion", "location": "Remote"})
+    result = intake.ingest("https://jobs.ashbyhq.com/protege/abc")
+    assert result.location == "Remote", "the model said 'Remote, EU'; the board said Remote"
+    assert wired["created"][0]["location"] == "Remote"
+
+
+def test_html_fallback_carries_no_location(monkeypatch, wired):
+    # A scraped page states nothing authoritatively — the model's read is all there is.
+    monkeypatch.setattr(intake.utils, "_validate_url", lambda url: True)
+    monkeypatch.setattr(intake.utils, "fetch_posting", lambda url: {})
+    monkeypatch.setattr(intake.utils, "fetch_url_generic", lambda url, max_chars=0: JD)
+    result = intake.ingest("https://acme.com/careers/1")
+    assert result.location == "Remote, EU"
