@@ -89,17 +89,28 @@ templates.env.filters["safe_url"] = _safe_job_url
 
 
 def _domain_tags(domain: str | None) -> list[dict]:
-    """Split a possibly-compound "X | Y" domain string (legacy rows scored before
-    domain classification was tightened to a single value) into individual tags.
+    """Split a compound "X | Y" domain string into individual tags.
+
+    Compound is the intended shape, not a legacy artefact — this docstring used to
+    claim the opposite while 86 of 284 cloud-scored cards carried two or more
+    domains, because the rubric offered them as a pipe-separated menu and never
+    said whether to pick one. Playlab (#76427) is what made it visible: an AI
+    product built for 60,000 educators, tagged AI/ML with no EdTech. The rubric now
+    asks for every domain that applies, up to three, most defining first.
     AI/ML — the candidate's primary target domain — keeps the existing accent-gold
     tag-accent styling; anything in DOMAIN_COLORS (config.py) gets its own oklch hue;
     anything else (incl. "Other") falls back to a plain neutral tag."""
     if not domain:
         return []
+    # The rubric said "Healthcare" for a while and the palette has always said
+    # "HealthTech", so six cards rendered plain grey. The rubric now emits
+    # HealthTech; this keeps the older rows coloured instead of rescoring them.
+    aliases = {"Healthcare": "HealthTech"}
     tags = []
     for name in (d.strip() for d in domain.split("|")):
         if not name:
             continue
+        name = aliases.get(name, name)
         if name == "AI/ML":
             tags.append({"name": name, "class": "tag tag-accent", "style": ""})
         elif name in DOMAIN_COLORS:
