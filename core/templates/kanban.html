@@ -169,7 +169,7 @@
     <div class="kanban-col">
       <div class="kanban-col-head">
         <span>from {{ status_labels[status] }}</span>
-        <span style="font-size:12px;font-feature-settings:'tnum';color:var(--color-neutral-600)">{{ board.rejected[status]|length }}</span>
+        <span style="font-size:12px;font-feature-settings:'tnum';color:var(--color-neutral-600)">{{ board.rejected_counts[status] }}</span>
       </div>
       <div class="kanban-cards">
         {% for job in board.rejected[status] %}
@@ -180,6 +180,12 @@
         </div>
         {% endfor %}
         {% if not board.rejected[status] %}<div class="kanban-empty">—</div>{% endif %}
+        {% if board.rejected_counts[status] > board.rejected[status]|length %}
+        <div class="text-muted" style="font-size:11px;padding:6px 2px">
+          показаны последние {{ board.rejected[status]|length }} из {{ board.rejected_counts[status] }} —
+          <a href="/review">все в Review</a>
+        </div>
+        {% endif %}
       </div>
     </div>
     {% endfor %}

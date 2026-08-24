@@ -1160,11 +1160,21 @@ def get_review_jobs(sort: str = "newest") -> list[dict]:
         conn.close()
 
 
+# How many rejected cards each sub-column renders. The band is collapsed by default,
+# but a collapsed band is still fully in the DOM — on 2026-08-24 the board carried 1363
+# rejected cards against 98 active ones, rendered twice over (desktop band + mobile
+# panel), producing a 2 MB page with 10,580 divs and 2,828 click handlers. That, not
+# the server (231 ms), was the 5-10 s Dimitry felt on every button: each action
+# refreshes the board, and the browser re-parsed all of it every time.
+KANBAN_REJECTED_LIMIT = 25
+
+
 def get_kanban_jobs(
     q: str | None = None,
     score_min: int | None = None,
     domains: list[str] | None = None,
     sort: str = "newest",
+    rejected_limit: int | None = KANBAN_REJECTED_LIMIT,
 ) -> dict[str, dict[str, list[dict]]]:
     """Two bands (design_handoff_review_ui Turn 3): 'active' — the live funnel
     columns — and 'rejected', grouped by the stage a job was rejected FROM (read
@@ -1221,7 +1231,14 @@ def get_kanban_jobs(
             rejected[stage].append(row)
         else:
             active.setdefault(row["current_status"], []).append(row)
-    return {"active": active, "rejected": rejected}
+
+    # True counts survive the cap: the column headers and the band total must keep
+    # reporting the whole history even when only the newest slice is drawn. Rows are
+    # already ordered newest-first (or by score), so the slice is the top of it.
+    rejected_counts = {stage: len(items) for stage, items in rejected.items()}
+    if rejected_limit is not None:
+        rejected = {stage: items[:rejected_limit] for stage, items in rejected.items()}
+    return {"active": active, "rejected": rejected, "rejected_counts": rejected_counts}
 
 
 def get_job(job_id: int) -> dict | None:

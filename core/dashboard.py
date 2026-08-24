@@ -430,9 +430,13 @@ def kanban(
             raise HTTPException(status_code=400, detail=f"Invalid score_min: {score_min!r}")
     board = db.get_kanban_jobs(q=q, score_min=score_min_val, domains=domains or None, sort=sort)
     active_total = sum(len(v) for v in board["active"].values())
-    rejected_total = sum(len(v) for v in board["rejected"].values())
+    # Counts come from rejected_counts, not from the rendered lists: the board draws
+    # only the newest slice per stage (db.KANBAN_REJECTED_LIMIT), and the header must
+    # still say how many there really are.
+    rejected_counts = board["rejected_counts"]
+    rejected_total = sum(rejected_counts.values())
     rejected_breakdown = [
-        f"from {STATUS_LABELS[s]} {len(board['rejected'][s])}" for s in FUNNEL_ORDER if board["rejected"][s]
+        f"from {STATUS_LABELS[s]} {rejected_counts[s]}" for s in FUNNEL_ORDER if rejected_counts[s]
     ]
     active_filters = (1 if score_min_val is not None else 0) + len(domains)
     funnel = db.get_funnel_stats()
@@ -443,6 +447,7 @@ def kanban(
         "active_total": active_total,
         "rejected_total": rejected_total,
         "rejected_breakdown": rejected_breakdown,
+        "rejected_limit": db.KANBAN_REJECTED_LIMIT,
         "q": q,
         "score_min": score_min_val,
         "domains": domains,

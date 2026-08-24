@@ -333,10 +333,14 @@ def send_summary(stats: dict) -> None:
     """Always report, even on a quiet run: a silently dead mail agent looks exactly
     like 'nobody replied', which is the failure mode that erodes trust in it."""
     try:
-        telegram.send_error(
+        # send_message, not send_error: the latter prefixes "⚠️ Job Scraper error",
+        # so every successful sweep arrived looking like an incident (Dimitry,
+        # 2026-08-24). The genuinely alarming paths in run() still use send_error.
+        telegram.send_message(
             f"📬 Почта: просмотрено {stats['seen']}, ждут решения {stats['pending']}"
             + (f" (без карточки: {stats['unmatched']})" if stats["unmatched"] else "")
             + f", записано без действий {stats['ignored']}"
+            + (f", уже разобрано ранее {stats['duplicates']}" if stats["duplicates"] else "")
             + (f", ошибок {stats['errors']}" if stats["errors"] else "")
         )
     except Exception:
