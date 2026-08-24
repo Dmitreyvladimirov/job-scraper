@@ -1,5 +1,6 @@
 """FastAPI dashboard — reads from Postgres and serves analytics charts."""
 import csv
+import hashlib
 import hmac
 from html import escape as html_escape
 import io
@@ -47,6 +48,28 @@ templates = Jinja2Templates(directory=_BASE_DIR / "templates")
 # scraped value (job title, company) can't break out of a JS string context when
 # embedded in an inline event handler (see kanban.html's status-chip onclick).
 templates.env.filters["tojson"] = lambda v: json.dumps(v).replace("<", "\\u003c")
+
+
+def _asset_version() -> str:
+    """Content hash of the stylesheet, appended to its URL as ?v=.
+
+    Without it a CSS change is invisible until the browser happens to revalidate:
+    StaticFiles sends an ETag and Last-Modified but no Cache-Control, so browsers
+    fall back to heuristic caching and may serve a stale copy for hours. On
+    2026-08-24 that turned a pure refactor — inline styles moved into classes —
+    into a broken-looking board: the new HTML referenced classes that the cached
+    stylesheet did not have yet. A hash in the URL makes every deploy a new URL,
+    so the answer stops being "hard-refresh".
+    """
+    try:
+        return hashlib.md5((_BASE_DIR / "static" / "classical.css").read_bytes()).hexdigest()[:8]
+    except OSError:
+        # A missing stylesheet is the template's problem to show, not a reason to
+        # refuse to start; fall back to a constant so the page still renders.
+        return "dev"
+
+
+templates.env.globals["asset_v"] = _asset_version()
 
 
 def _safe_job_url(url: str | None) -> str | None:
