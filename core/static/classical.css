@@ -347,3 +347,41 @@ body.dark {
 .empty-state .empty-title { font-family: var(--font-heading); font-weight: 600; font-size: 15px; margin: 10px 0 4px; }
 .empty-state .empty-body { font-size: 12px; color: var(--color-neutral-600); margin: 0; line-height: 1.5; }
 
+
+/* --- Kanban card internals -------------------------------------------------
+   Extracted from inline style="" attributes on 2026-08-24. Those attributes were
+   1,014,774 characters — exactly half of the 2 MB the board used to weigh —
+   because five style strings repeated once per card, 1,461 times over. Classes
+   cost the same bytes once instead of per card, and the browser can share the
+   computed style rather than parsing each copy. */
+
+.kc            { padding: 10px; gap: 5px; cursor: pointer; }
+.kc-dim        { opacity: .8; }
+.kc-head       { display: flex; gap: 8px; align-items: baseline; }
+.kc-title      { font-family: var(--font-heading); font-weight: 600; font-size: 14px; line-height: 1.25; }
+.kc-title-flex { flex: 1; }
+.kc-score      { font-family: var(--font-heading); font-weight: 600; font-feature-settings: 'tnum'; color: var(--color-accent-700); }
+.kc-sub        { font-size: 11px; color: var(--color-neutral-700); }
+.kc-indent     { padding-left: 23px; }
+.kc-tags       { display: flex; flex-wrap: wrap; gap: 4px; }
+.kc-metarow    { font-size: 11px; font-feature-settings: 'tnum'; display: flex; gap: 8px; flex-wrap: wrap; }
+.kc-muted      { color: var(--color-neutral-600); }
+.kc-reason     { align-self: start; font-size: 10.5px; }
+.kc-colcount   { font-size: 12px; font-feature-settings: 'tnum'; color: var(--color-neutral-600); }
+.kc-more       { font-size: 11px; padding: 6px 2px; }
+
+/* Mobile panels render the same cards a second time, so the same extraction
+   pays twice. */
+.mobile-grid   { display: grid; gap: 10px; }
+.mc            { padding: 12px; gap: 5px; }
+.mc-dim        { opacity: .85; }
+.mc-row        { display: flex; justify-content: space-between; gap: 8px; }
+.mc-title      { font-family: var(--font-heading); font-weight: 600; font-size: 15.5px; }
+.mc-score      { font-family: var(--font-heading); font-weight: 600; font-feature-settings: 'tnum'; color: var(--color-accent-700); }
+.mc-score-dim  { color: var(--color-accent-500); }
+.mc-foot       { display: flex; justify-content: space-between; align-items: center; }
+.mc-src        { font-size: 11.5px; color: var(--color-neutral-600); }
+.mobile-tab-pad { padding: 5px 9px; white-space: nowrap; }
+
+/* Inline, swappable error in the mail review queue (see _mail_event_error). */
+.mail-event-error { font-size: 12.5px; color: var(--color-danger, #b23); padding: 8px 0; }

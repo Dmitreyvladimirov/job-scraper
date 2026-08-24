@@ -130,18 +130,18 @@
       </div>
       <div class="kanban-cards" data-status="{{ status }}">
         {% for job in board.active[status] %}
-        <div class="card" data-job-id="{{ job.id }}" data-url="{{ (job.apply_url or job.url)|safe_url or '' }}" data-title="{{ job.title }}" data-company="{{ job.company or '' }}" style="padding:10px;gap:5px;cursor:pointer" onclick="cardClick(event, {{ job.id }})">
-          <div style="display:flex;gap:8px;align-items:baseline">
+        <div class="card kc" data-job-id="{{ job.id }}" data-url="{{ (job.apply_url or job.url)|safe_url or '' }}" data-title="{{ job.title }}" data-company="{{ job.company or '' }}" onclick="cardClick(event, {{ job.id }})">
+          <div class="kc-head">
             <span class="card-select-box" data-select-box></span>
-            <div style="font-family:var(--font-heading);font-weight:600;font-size:14px;line-height:1.25;flex:1">{{ job.title }}</div>
-            <span style="font-family:var(--font-heading);font-weight:600;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
+            <div class="kc-title kc-title-flex">{{ job.title }}</div>
+            <span class="kc-score">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
           </div>
-          <div style="font-size:11px;color:var(--color-neutral-700);padding-left:23px">{{ job.company or '—' }}</div>
+          <div class="kc-sub kc-indent">{{ job.company or '—' }}</div>
           {% set tags = domain_tags(job.domain) %}
-          {% if tags %}<div style="display:flex;flex-wrap:wrap;gap:4px;padding-left:23px">{% for t in tags %}<span class="{{ t.class }}" style="font-size:10.5px;padding:1px 7px;{{ t.style }}">{{ t.name }}</span>{% endfor %}</div>{% endif %}
-          <div class="card-meta" style="font-size:11px;font-feature-settings:'tnum';padding-left:23px;display:flex;gap:8px;flex-wrap:wrap">
+          {% if tags %}<div class="kc-tags kc-indent">{% for t in tags %}<span class="{{ t.class }}" style="font-size:10.5px;padding:1px 7px;{{ t.style }}">{{ t.name }}</span>{% endfor %}</div>{% endif %}
+          <div class="card-meta kc-metarow kc-indent">
             {% if job.logged_at %}<span>{{ job.logged_at|short_date }}</span>{% endif %}
-            {% if job.location %}<span style="color:var(--color-neutral-600)">{{ job.location|location_badge }}</span>{% endif %}
+            {% if job.location %}<span class="kc-muted">{{ job.location|location_badge }}</span>{% endif %}
           </div>
         </div>
         {% endfor %}
@@ -169,19 +169,19 @@
     <div class="kanban-col">
       <div class="kanban-col-head">
         <span>from {{ status_labels[status] }}</span>
-        <span style="font-size:12px;font-feature-settings:'tnum';color:var(--color-neutral-600)">{{ board.rejected_counts[status] }}</span>
+        <span class="kc-colcount">{{ board.rejected_counts[status] }}</span>
       </div>
       <div class="kanban-cards">
         {% for job in board.rejected[status] %}
-        <div class="card" data-job-id="{{ job.id }}" style="padding:10px;gap:5px;opacity:.8;cursor:pointer" onclick="openDetail({{ job.id }})">
-          <div style="font-family:var(--font-heading);font-weight:600;font-size:14px;line-height:1.25">{{ job.title }}</div>
-          <div style="font-size:11px;color:var(--color-neutral-700)">{{ job.company or '—' }} · {{ job.ats_score if job.ats_score is not none else '—' }}</div>
-          {% if job.rejection_reason %}<span class="tag tag-neutral" style="align-self:start;font-size:10.5px">{{ reason_labels.get(job.rejection_reason, job.rejection_reason) }}</span>{% endif %}
+        <div class="card kc kc-dim" data-job-id="{{ job.id }}" onclick="openDetail({{ job.id }})">
+          <div class="kc-title">{{ job.title }}</div>
+          <div class="kc-sub">{{ job.company or '—' }} · {{ job.ats_score if job.ats_score is not none else '—' }}</div>
+          {% if job.rejection_reason %}<span class="tag tag-neutral kc-reason">{{ reason_labels.get(job.rejection_reason, job.rejection_reason) }}</span>{% endif %}
         </div>
         {% endfor %}
         {% if not board.rejected[status] %}<div class="kanban-empty">—</div>{% endif %}
         {% if board.rejected_counts[status] > board.rejected[status]|length %}
-        <div class="text-muted" style="font-size:11px;padding:6px 2px">
+        <div class="text-muted kc-more">
           показаны последние {{ board.rejected[status]|length }} из {{ board.rejected_counts[status] }} —
           <a href="/review">все в Review</a>
         </div>
@@ -197,21 +197,21 @@
 <div class="kanban-mobile">
   <div class="seg" style="font-size:12px;overflow-x:auto;max-width:100%;margin-bottom:14px">
     {% for status in funnel_order %}
-    <span class="seg-opt mobile-tab" data-tab="{{ status }}" style="padding:5px 9px;white-space:nowrap">{{ status_labels[status] }} {{ board.active[status]|length }}</span>
+    <span class="seg-opt mobile-tab mobile-tab-pad" data-tab="{{ status }}">{{ status_labels[status] }} {{ board.active[status]|length }}</span>
     {% endfor %}
-    <span class="seg-opt mobile-tab" data-tab="rejected" style="padding:5px 9px;white-space:nowrap">Rejected {{ rejected_total }}</span>
+    <span class="seg-opt mobile-tab mobile-tab-pad" data-tab="rejected">Rejected {{ rejected_total }}</span>
   </div>
   {% for status in funnel_order %}
   <div class="mobile-panel" data-panel="{{ status }}" style="display:none">
-    <div style="display:grid;gap:10px">
+    <div class="mobile-grid">
       {% for job in board.active[status] %}
-      <div class="card" style="padding:12px;gap:5px" onclick="openDetail({{ job.id }})">
-        <div style="display:flex;justify-content:space-between;gap:8px">
-          <div style="font-family:var(--font-heading);font-weight:600;font-size:15.5px">{{ job.title }} — {{ job.company or '—' }}</div>
-          <span style="font-family:var(--font-heading);font-weight:600;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
+      <div class="card mc" onclick="openDetail({{ job.id }})">
+        <div class="mc-row">
+          <div class="mc-title">{{ job.title }} — {{ job.company or '—' }}</div>
+          <span class="mc-score">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:11.5px;color:var(--color-neutral-600)">{{ job.source }}</span>
+        <div class="mc-foot">
+          <span class="mc-src">{{ job.source }}</span>
           <span class="tag tag-outline status-chip" onclick="event.stopPropagation();openStatusSheet({{ job.id }}, {{ job.title|tojson }}, {{ status|tojson }})">{{ status_labels[status] }} ▾</span>
         </div>
       </div>
@@ -221,15 +221,15 @@
   </div>
   {% endfor %}
   <div class="mobile-panel" data-panel="rejected" style="display:none">
-    <div style="display:grid;gap:10px">
+    <div class="mobile-grid">
       {% for status in funnel_order %}{% for job in board.rejected[status] %}
-      <div class="card" style="padding:12px;gap:5px;opacity:.85" onclick="openDetail({{ job.id }})">
-        <div style="display:flex;justify-content:space-between;gap:8px">
-          <div style="font-family:var(--font-heading);font-weight:600;font-size:15.5px">{{ job.title }} — {{ job.company or '—' }}</div>
-          <span style="font-family:var(--font-heading);font-weight:600;font-feature-settings:'tnum';color:var(--color-accent-500)">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
+      <div class="card mc mc-dim" onclick="openDetail({{ job.id }})">
+        <div class="mc-row">
+          <div class="mc-title">{{ job.title }} — {{ job.company or '—' }}</div>
+          <span class="mc-score mc-score-dim">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:11.5px;color:var(--color-neutral-600)">from {{ status_labels[status] }}</span>
+        <div class="mc-foot">
+          <span class="mc-src">from {{ status_labels[status] }}</span>
           {% if job.rejection_reason %}<span class="tag tag-neutral" style="font-size:10.5px">{{ reason_labels.get(job.rejection_reason, job.rejection_reason) }}</span>{% endif %}
         </div>
       </div>

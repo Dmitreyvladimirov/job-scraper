@@ -585,11 +585,34 @@ def test_mail_confirm_applies_through_normal_status_path(monkeypatch):
     assert "применено" in r.text
 
 
-def test_mail_confirm_without_card_is_400(monkeypatch):
-    monkeypatch.setattr(dashboard.db, "resolve_mail_event", lambda *a, **k: {})
+def test_mail_confirm_without_card_explains_itself(monkeypatch):
+    """Used to be a 400, which HTMX does not swap — so the button looked dead
+    (seen live 2026-08-24). A user mistake now answers 200 with a visible reason."""
+    called = []
+    monkeypatch.setattr(dashboard.db, "resolve_mail_event", lambda *a, **k: called.append(a))
     r = _authenticated_client().post("/mail/events/7/resolve", data={
         "action": "confirmed", "job_id": "", "status": "rejected"})
+    assert r.status_code == 200
+    assert "Нужен номер карточки" in r.text
+    assert "mail-event-7" in r.text, "must replace the row, or nothing appears"
+    assert not called, "nothing may be resolved without a card"
+
+
+def test_mail_unknown_action_is_still_400(monkeypatch):
+    # A malformed request is a protocol error, not a user mistake.
+    r = _authenticated_client().post("/mail/events/7/resolve", data={"action": "nonsense"})
     assert r.status_code == 400
+
+
+def test_mail_resolve_error_is_escaped(monkeypatch):
+    def _boom(*a, **k):
+        raise ValueError("<script>alert(1)</script>")
+
+    monkeypatch.setattr(dashboard.db, "resolve_mail_event", _boom)
+    r = _authenticated_client().post("/mail/events/7/resolve", data={
+        "action": "confirmed", "job_id": "42", "status": "rejected"})
+    assert r.status_code == 200
+    assert "<script>" not in r.text and "&lt;script&gt;" in r.text
 
 
 def test_mail_dismiss_needs_no_card(monkeypatch):

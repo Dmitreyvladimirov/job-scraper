@@ -1,6 +1,7 @@
 """FastAPI dashboard — reads from Postgres and serves analytics charts."""
 import csv
 import hmac
+from html import escape as html_escape
 import io
 import json
 import logging
@@ -1100,6 +1101,14 @@ def mail_queue(request: Request):
     })
 
 
+def _mail_event_error(event_id: int, message: str) -> HTMLResponse:
+    """Inline, swappable error for the mail queue. Kept as a 200 on purpose — see
+    the note in resolve_mail_event."""
+    safe = html_escape(message)
+    return HTMLResponse(
+        f'<div id="mail-event-{event_id}" class="mail-event-error">{safe}</div>')
+
+
 @app.post("/mail/events/{event_id}/resolve", response_class=HTMLResponse)
 def resolve_mail_event(
     request: Request,
@@ -1117,13 +1126,16 @@ def resolve_mail_event(
     if action not in ("confirmed", "dismissed"):
         raise HTTPException(status_code=400, detail=f"Unknown action: {action!r}")
     jid = int(job_id) if job_id.strip().lstrip("#").isdigit() else None
+    # A user mistake answers with 200 and a visible reason, not 400: HTMX does not
+    # swap a 4xx response, so the old behaviour left the button looking dead. Real
+    # protocol errors (an unknown action above) still raise.
     if action == "confirmed" and not jid:
-        raise HTTPException(status_code=400, detail="Нужен номер карточки")
+        return _mail_event_error(event_id, "Нужен номер карточки — впиши #id и нажми снова")
     try:
         db.resolve_mail_event(event_id, action, job_id=jid,
                               status=status or None, reason=reason or None)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return _mail_event_error(event_id, str(e))
     verb = "применено" if action == "confirmed" else "пропущено"
     return HTMLResponse(
         f'<div id="mail-event-{event_id}" style="font-size:12.5px;color:var(--color-neutral-600);'

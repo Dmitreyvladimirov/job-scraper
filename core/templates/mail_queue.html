@@ -39,7 +39,13 @@
     <form hx-post="/mail/events/{{ e.id }}/resolve" hx-target="#mail-event-{{ e.id }}" hx-swap="outerHTML"
           style="display:flex;gap:6px;align-items:center;margin:0">
       {% if not e.job_id %}
-      <input class="input" name="job_id" placeholder="#id карточки" style="width:100px;font-size:12px;padding:4px 8px">
+      {# required + formnovalidate on Пропустить: confirming without a card id used to
+         POST anyway and come back 400, and HTMX does not swap a 4xx, so the button
+         looked dead (seen live 2026-08-24). The browser now refuses to submit and
+         says why, while dismissing — which needs no card — still works. #}
+      <input class="input" name="job_id" placeholder="#id карточки" required
+             title="Введи номер карточки, к которой относится письмо"
+             style="width:100px;font-size:12px;padding:4px 8px">
       {% else %}
       <input type="hidden" name="job_id" value="{{ e.job_id }}">
       {% endif %}
@@ -54,7 +60,7 @@
       {% endif %}
       <button type="submit" name="action" value="confirmed" class="btn btn-primary" style="font-size:12px">Применить</button>
       {% endif %}
-      <button type="submit" name="action" value="dismissed" class="btn btn-secondary" style="font-size:12px">Пропустить</button>
+      <button type="submit" name="action" value="dismissed" class="btn btn-secondary" formnovalidate style="font-size:12px">Пропустить</button>
     </form>
   </div>
 </div>
