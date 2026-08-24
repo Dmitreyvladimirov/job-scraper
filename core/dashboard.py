@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -106,8 +107,13 @@ def _domain_tags(domain: str | None) -> list[dict]:
     # "HealthTech", so six cards rendered plain grey. The rubric now emits
     # HealthTech; this keeps the older rows coloured instead of rescoring them.
     aliases = {"Healthcare": "HealthTech"}
+    # Split on '+' and ',' as well as the '|' the rubric asks for: the model
+    # improvises a separator now and then (one live card read
+    # "Growth/Consumer + B2B SaaS + AI/ML" and rendered as a single unreadable
+    # blob). '/' is deliberately not a separator — "AI/ML" and "Growth/Consumer"
+    # contain one.
     tags = []
-    for name in (d.strip() for d in domain.split("|")):
+    for name in (d.strip() for d in re.split(r"[|+,]", domain)):
         if not name:
             continue
         name = aliases.get(name, name)
