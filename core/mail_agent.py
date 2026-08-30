@@ -177,6 +177,14 @@ def decide(label: str, candidates: list[dict]) -> dict:
 
     target, reason, _needs_confirm = MAIL_CLASSES.get(label, (None, None, False))
     job = candidates[0] if len(candidates) == 1 else None
+    if job is None and candidates:
+        # One live application plus its own auto-aged duplicates is not real
+        # ambiguity (Guidde, 2026-08-27: card #73844 applied 21.07 and card #73926
+        # closed as no_response on 10.06 — same role, same company). Only a genuine
+        # choice between two OPEN applications goes to the human.
+        live = [c for c in candidates if c.get("current_status") != "rejected"]
+        if len(live) == 1:
+            job = live[0]
 
     if label == "noise":
         return {"action": "ignored", "job_id": job["id"] if job else None,

@@ -634,7 +634,8 @@ ACTIVE_FUNNEL = ("applied", "recruiter_reply", "screen", "interview", "offer")
 
 def find_cards_for_mail(company_hint: str | None, sender_domain: str | None,
                         title_hint: str | None, limit: int = 10,
-                        include_aged: bool = True) -> list[dict]:
+                        include_aged: bool = True,
+                        include_closed: bool = False) -> list[dict]:
     """Candidate cards an incoming email might refer to (mail agent, 2026-08-22).
 
     Deliberately searches ONLY the active funnel: the agent physically cannot
@@ -644,14 +645,21 @@ def find_cards_for_mail(company_hint: str | None, sender_domain: str | None,
     Ranking: apply_url/url host match (strong — but only ~40% of real emails come
     from a domain that matches, per the labelling pass) > exact company match >
     company substring. Title is a tie-breaker only; ATS subject lines rarely quote
-    the exact stored title. Returns a compact projection, never SELECT j.*."""
+    the exact stored title. Returns a compact projection, never SELECT j.*.
+
+    include_closed is for DISPLAY ONLY (the mail queue, 2026-08-27): it also returns
+    cards Dimitry closed himself, so the queue can say "card #71229 is already
+    rejected" instead of "no card found" — which is what a second rejection email
+    for an already-closed application actually means. The matcher must never pass
+    it: an unreachable card is most of this feature's safety."""
     if not any((company_hint, sender_domain)):
         return []
     conn = _conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT id, title, company, url, apply_url, current_status, applied_at,
+                """SELECT id, title, company, url, apply_url, current_status,
+                          rejection_reason, applied_at,
                           CASE
                             WHEN %(domain)s <> '' AND (url ILIKE %(dom_like)s OR apply_url ILIKE %(dom_like)s) THEN 3
                             WHEN %(company)s <> '' AND lower(trim(company)) = lower(trim(%(company)s)) THEN 2
@@ -659,7 +667,8 @@ def find_cards_for_mail(company_hint: str | None, sender_domain: str | None,
                             ELSE 0
                           END AS match_score
                    FROM jobs
-                   WHERE (current_status = ANY(%(statuses)s)
+                   WHERE ((%(include_closed)s AND current_status = 'rejected')
+                          OR current_status = ANY(%(statuses)s)
                           -- Aged-out cards are searchable too (found live 2026-08-22):
                           -- the Notion migration closed everything older than 30 days
                           -- as no_response, which mis-aged a LIVE Workday process that
@@ -688,6 +697,7 @@ def find_cards_for_mail(company_hint: str | None, sender_domain: str | None,
                     "title_like": f"%{(title_hint or '').lower().strip()}%",
                     "statuses": list(ACTIVE_FUNNEL),
                     "include_aged": include_aged,
+                    "include_closed": include_closed,
                     "limit": limit,
                 },
             )

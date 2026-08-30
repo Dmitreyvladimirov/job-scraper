@@ -9,7 +9,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -1126,15 +1126,43 @@ def tracker(
     return RedirectResponse(url="/dashboard" + ("?" + "&".join(params) if params else ""), status_code=301)
 
 
+def _mail_event_hints(event: dict) -> dict:
+    """Cards an unmatched mail event might belong to, recomputed at render time.
+
+    The matcher already ran this search when the mail arrived and then threw the
+    result away: decide() refuses to pick between two open applications, and the
+    queue was left asking for a card number typed from memory (2026-08-27 —
+    Guidde/Adapty sat unmatched with both candidates one query away). Nothing new
+    is stored: company_hint, from_addr and title_hint are already on the row, so
+    this works for events recorded before this screen learned to show them.
+
+    `closed` answers the other half: TryHackMe and Synthesia matched nothing only
+    because the card is already rejected, and "no card found" is a misleading way
+    to say "you already closed this one"."""
+    from mail_agent import sender_domain
+    domain = sender_domain(event.get("from_addr") or "")
+    args = (event.get("company_hint"), domain, event.get("title_hint"))
+    candidates = db.find_cards_for_mail(*args, limit=5)
+    closed = []
+    if not candidates:
+        closed = [c for c in db.find_cards_for_mail(*args, limit=5, include_closed=True)
+                  if c.get("current_status") == "rejected"]
+    return {"candidates": candidates, "closed": closed}
+
+
 @app.get("/mail", response_class=HTMLResponse)
 def mail_queue(request: Request):
     """Mail agent review queue (2026-08-22). Everything here is a PROPOSAL — no
     card has been touched yet; v1 applies nothing without this screen or the
     Telegram buttons."""
     _authenticate(request)
+    events = db.get_pending_mail_events()
+    for event in events:
+        if not event.get("job_id"):
+            event.update(_mail_event_hints(event))
     return templates.TemplateResponse(request, "mail_queue.html", {
         "active": "mail",
-        "events": db.get_pending_mail_events(),
+        "events": events,
         "statuses": CURRENT_STATUSES,
         "status_labels": STATUS_LABELS,
         "reasons": [(r, REJECTION_REASON_LABELS[r]) for r in USER_REJECTION_REASONS],
@@ -1238,21 +1266,51 @@ def toggle_source_route(request: Request, name: str):
     })
 
 
+# The scraper's Railway cron, mirrored here so the staleness check knows when a run
+# was actually due: "7 6,9,12,15 * * 1-5" — four times a day, Monday to Friday, UTC.
+# Keep in sync with the service's cronSchedule; a copy is unavoidable (Railway holds
+# the schedule, the dashboard has to reason about it) but a wrong copy only ever
+# makes the banner early or late, never touches data.
+SCRAPE_CRON_HOURS_UTC = (6, 9, 12, 15)
+SCRAPE_CRON_WEEKDAYS = (0, 1, 2, 3, 4)  # datetime.weekday(): Mon=0 .. Fri=4
+SCRAPE_GRACE_MINUTES = 90  # a slot counts as missed only this long after it fires
+
+
+def _last_due_run(now: datetime) -> datetime | None:
+    """The most recent cron slot that should already have produced a run.
+
+    Replaces a flat 20-hour threshold, which called every weekend a failure: the
+    gap between Friday 15:07 and Monday 06:07 UTC is 63 hours by design, so the
+    banner cried wolf every Saturday and Sunday (seen live 2026-08-30) and trained
+    the eye to ignore the one signal that should mean the cron is actually stuck."""
+    candidate = now - timedelta(minutes=SCRAPE_GRACE_MINUTES)
+    for _ in range(14):  # two weeks back is far more than any legitimate gap
+        if candidate.weekday() in SCRAPE_CRON_WEEKDAYS:
+            due = [h for h in SCRAPE_CRON_HOURS_UTC if h <= candidate.hour]
+            if due:
+                return candidate.replace(hour=max(due), minute=0, second=0, microsecond=0)
+        candidate = (candidate - timedelta(days=1)).replace(hour=23, minute=59)
+    return None
+
+
 @app.get("/api/last-run")
 def api_last_run(request: Request):
     """Turn 7g auto-refresh + Turn 7c stale-scraper banner — polled every 5 min from
-    base.html. hours_ago lets the client decide both "did a new run just land" (id
-    changed since page load) and "has the scraper gone quiet" (hours_ago past a
-    threshold), without a second endpoint."""
+    base.html. The run id answers "did a new run just land"; `stale` answers "has the
+    scraper gone quiet", and is computed here rather than in the browser because only
+    the server knows the schedule the answer depends on."""
     _authenticate(request)
     run = db.get_last_run()
     if not run:
-        return {"run_id": None, "qualified": 0, "hours_ago": None}
+        return {"run_id": None, "qualified": 0, "hours_ago": None, "stale": False}
     finished = datetime.fromisoformat(run["finished_at"])
     if finished.tzinfo is None:
         finished = finished.replace(tzinfo=timezone.utc)
-    hours_ago = (datetime.now(timezone.utc) - finished).total_seconds() / 3600
-    return {"run_id": run["id"], "qualified": run["qualified"], "hours_ago": round(hours_ago, 1)}
+    now = datetime.now(timezone.utc)
+    hours_ago = (now - finished).total_seconds() / 3600
+    due = _last_due_run(now)
+    return {"run_id": run["id"], "qualified": run["qualified"],
+            "hours_ago": round(hours_ago, 1), "stale": bool(due and finished < due)}
 
 
 _CSV_VIEWS = {"tracker", "vacancies", "rejections"}

@@ -32,8 +32,25 @@
     {% if e.job_id %}
       <span style="font-size:13px">Карточка: <a href="/kanban?job={{ e.job_id }}" style="color:inherit">{{ e.job_title }} @ {{ e.job_company }}</a>
         <span style="color:var(--color-neutral-600)">({{ e.job_status }})</span></span>
+    {% elif e.candidates %}
+      {# The matcher found these but refused to choose (two open applications at one
+         company). Showing them turns "type a card number from memory" into a click. #}
+      <div style="font-size:13px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span style="color:var(--color-neutral-600)">Похоже на:</span>
+        {% for c in e.candidates %}
+        <button type="button" class="btn btn-ghost" style="font-size:12px;padding:3px 8px"
+                title="Подставить #{{ c.id }} в форму"
+                onclick="var f=document.querySelector('#mail-event-{{ e.id }} input[name=job_id]');f.value='{{ c.id }}';f.style.borderColor='var(--color-accent)'">#{{ c.id }} {{ c.title[:38] }} · {{ c.current_status }}</button>
+        {% endfor %}
+      </div>
+    {% elif e.closed %}
+      <div style="font-size:13px;color:var(--color-neutral-600)">
+        Уже закрыта:
+        {% for c in e.closed %}<a href="/kanban?job={{ c.id }}" style="color:inherit">#{{ c.id }} {{ c.title[:38] }}</a>{% if c.rejection_reason %} ({{ c.rejection_reason }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+        — письмо ничего не меняет
+      </div>
     {% else %}
-      <span style="font-size:13px;color:var(--color-neutral-600);font-style:italic">Карточка не определена — выбери номер вручную</span>
+      <span style="font-size:13px;color:var(--color-neutral-600);font-style:italic">Карточки нет — отклик мимо трекера</span>
     {% endif %}
     <span style="flex:1"></span>
     <form hx-post="/mail/events/{{ e.id }}/resolve" hx-target="#mail-event-{{ e.id }}" hx-swap="outerHTML"

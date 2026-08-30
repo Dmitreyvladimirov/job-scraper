@@ -243,3 +243,25 @@ def test_override_written_in_gmail_or_syntax_does_not_crash(monkeypatch):
     monkeypatch.setattr(mail_agent, "MAIL_GMAIL_QUERY",
                         "{label:a label:b} newer_than:{days}d -in:sent")
     assert mail_agent.gmail_query(3) == "{label:a label:b} newer_than:3d -in:sent"
+
+
+# --- one live application + its own aged duplicates (2026-08-27) ---
+
+def test_aged_duplicate_does_not_make_a_live_card_ambiguous():
+    # Guidde: card #73844 applied 21.07, card #73926 auto-closed as no_response on
+    # 10.06 — same role, same company. The rejection email belongs to the live one.
+    live = _card(73844, status="applied", company="Guidde")
+    aged = dict(_card(73926, status="rejected", company="Guidde"),
+                rejection_reason="no_response")
+    out = mail_agent.decide("rejection", [live, aged])
+    assert out["job_id"] == 73844 and out["action"] == "pending"
+    assert out["proposed_status"] == "rejected"
+
+
+def test_two_open_applications_still_go_to_the_human():
+    # Adapty: "Head of Product" and "Product Lead, Analytics & ML", both open, and
+    # the email names no role. Nothing here says which one — so nobody guesses.
+    out = mail_agent.decide("rejection", [_card(73389, company="Adapty"),
+                                          _card(56455, company="Adapty")])
+    assert out["job_id"] is None and out["action"] == "pending"
+    assert "2 candidate cards" in out["note"]

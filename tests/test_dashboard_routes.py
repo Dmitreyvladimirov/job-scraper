@@ -703,3 +703,76 @@ def test_webhook_acknowledges_before_working(monkeypatch):
                             headers={"X-Telegram-Bot-Api-Secret-Token": "s3cret"})
     assert r.status_code == 200 and r.json() == {"ok": True}
     assert handed["message"]["text"] == "hi"
+
+
+# --- mail queue hints (2026-08-27) ---
+# The matcher searched for candidate cards when the mail arrived and discarded them
+# when it could not choose; the queue then asked for a card number from memory.
+
+def _mail_row(**kw):
+    return dict({"id": 1, "job_id": None, "company_hint": "Adapty",
+                 "from_addr": "Hiring Team <no-reply@ashbyhq.com>", "title_hint": ""}, **kw)
+
+
+def test_mail_hints_offer_the_candidates_the_matcher_found(monkeypatch):
+    found = [{"id": 73389, "current_status": "applied", "rejection_reason": None},
+             {"id": 56455, "current_status": "applied", "rejection_reason": None}]
+    monkeypatch.setattr(dashboard.db, "find_cards_for_mail",
+                        lambda *a, **kw: [] if kw.get("include_closed") else found)
+    hints = dashboard._mail_event_hints(_mail_row())
+    assert [c["id"] for c in hints["candidates"]] == [73389, 56455]
+    assert hints["closed"] == []
+
+
+def test_mail_hints_explain_an_already_closed_card(monkeypatch):
+    # TryHackMe: the only card is rejected, so the matcher (which cannot see closed
+    # cards) found nothing — that means "already handled", not "unknown company".
+    closed = [{"id": 71229, "current_status": "rejected", "rejection_reason": "company_rejected"}]
+    monkeypatch.setattr(dashboard.db, "find_cards_for_mail",
+                        lambda *a, **kw: closed if kw.get("include_closed") else [])
+    hints = dashboard._mail_event_hints(_mail_row(company_hint="TryHackMe"))
+    assert hints["candidates"] == []
+    assert [c["id"] for c in hints["closed"]] == [71229]
+
+
+def test_mail_hints_stay_empty_when_no_card_exists_at_all(monkeypatch):
+    # Tremau: applied outside the tracker — nothing to offer, and the queue says so.
+    monkeypatch.setattr(dashboard.db, "find_cards_for_mail", lambda *a, **kw: [])
+    hints = dashboard._mail_event_hints(_mail_row(company_hint="Tremau"))
+    assert hints == {"candidates": [], "closed": []}
+
+
+# --- stale-scraper banner knows the schedule (2026-08-30) ---
+# Cron is "7 6,9,12,15 * * 1-5", so Friday 15:07 -> Monday 06:07 UTC is a 63-hour
+# gap by design. The old flat 20-hour threshold called that a stuck scheduler every
+# single weekend.
+
+from datetime import datetime, timezone  # noqa: E402
+
+
+def _utc(y, m, d, hh, mm=0):
+    return datetime(y, m, d, hh, mm, tzinfo=timezone.utc)
+
+
+def test_weekend_gap_is_not_a_missed_run():
+    # Sunday 09:58 UTC, last run Friday 15:13 — 43 hours, nothing was due since.
+    due = dashboard._last_due_run(_utc(2026, 8, 30, 9, 58))
+    assert due == _utc(2026, 8, 28, 15)
+    assert _utc(2026, 8, 28, 15, 13) >= due  # the Friday run covers it
+
+
+def test_missed_weekday_slot_is_flagged_after_the_grace_window():
+    # Monday 08:00 UTC: the 06:07 slot is 113 minutes old and produced nothing.
+    due = dashboard._last_due_run(_utc(2026, 8, 31, 8))
+    assert due == _utc(2026, 8, 31, 6)
+    assert _utc(2026, 8, 28, 15, 13) < due  # Friday's run no longer covers Monday
+
+
+def test_a_slot_is_not_due_while_the_run_may_still_be_finishing():
+    # 07:00 UTC, 53 minutes after the 06:07 slot — inside the grace window, so the
+    # most recent DUE slot is still the previous day's last one.
+    assert dashboard._last_due_run(_utc(2026, 8, 31, 7)) == _utc(2026, 8, 28, 15)
+
+
+def test_monday_before_the_first_slot_looks_back_to_friday():
+    assert dashboard._last_due_run(_utc(2026, 8, 31, 3)) == _utc(2026, 8, 28, 15)
