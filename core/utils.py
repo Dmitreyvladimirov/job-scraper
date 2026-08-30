@@ -3,7 +3,9 @@ import re
 import socket
 import time
 import logging
+import unicodedata
 import requests
+from math import ceil
 from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
@@ -131,9 +133,80 @@ def _slugify(company: str) -> list[str]:
     return list(dict.fromkeys(variants))  # deduplicate, preserve order
 
 
+# Words that say nothing about *which* role a posting is: aggregators bolt them onto
+# titles ("... (Remote)", "... - Full Time") while the ATS board spells the same job
+# plainly, so counting them as evidence would sink an otherwise exact match.
+_TITLE_NOISE = {"remote", "hybrid", "onsite", "site", "full", "time", "part", "hiring",
+                "contract", "permanent", "freelance", "urgent", "position", "role"}
+
+
+def _title_tokens(text: str) -> list[str]:
+    """Significant words of a job title. Parenthesised suffixes are dropped first —
+    "(100% Remote - USA)" is board bookkeeping, not part of the role name."""
+    text = re.sub(r"[(\[][^)\]]*[)\]]", " ", text.lower())
+    return [w for w in re.findall(r"[^\W_]+", text) if len(w) > 3 and w not in _TITLE_NOISE]
+
+
 def _title_match(a: str, b: str) -> bool:
-    words = [w for w in a.lower().split() if len(w) > 3]
-    return sum(1 for w in words if w in b.lower()) >= min(2, len(words))
+    """True if `b` names the same role as `a`: nearly all significant words of `a` must
+    appear, one miss allowed per five words.
+
+    The old rule was a 2-word overlap, which matched any two "Principal Product Manager
+    - X" postings against each other. Live consequence (job 80194 @ Hopper, 2026-08-25):
+    the card for "Principal Product Manager - Pricing and Personalization" (Ireland)
+    linked to "Directeur principal de produit, IA conversationnelle" (Montréal, French).
+    118 apply URLs logged in the preceding 60 days were shared by two or more titles."""
+    words = _title_tokens(a)
+    if not words:
+        return False
+    b_low = b.lower()
+    hits = sum(1 for w in words if w in b_low)
+    return hits >= max(1, ceil(len(words) * 0.8))
+
+
+# Location words that carry no geography — they appear on every remote posting and
+# would make unrelated locations look like a match.
+_LOCATION_NOISE = {"remote", "hybrid", "onsite", "office", "based", "only", "anywhere",
+                   "worldwide", "global", "flexible", "work", "from", "home", "area", "and"}
+
+_LOCATION_ALIASES = (
+    (r"\bunited states(?: of america)?\b|\bu\.?s\.?a\.?\b", " us "),
+    (r"\bunited kingdom\b|\bgreat britain\b|\bu\.?k\.?\b|\bengland\b|\bscotland\b|\bwales\b", " gb "),
+)
+
+
+def _location_tokens(text: str) -> set[str]:
+    """Comparable words of a location string, accent-folded so "Montréal" and
+    "Montreal" are the same place, and with the few country spellings that differ
+    between aggregators and ATS boards ("USA" vs "United States") folded together."""
+    folded = unicodedata.normalize("NFKD", (text or "").lower())
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    for pattern, replacement in _LOCATION_ALIASES:
+        folded = re.sub(pattern, replacement, folded)
+    return {w for w in re.findall(r"[^\W_]+", folded)
+            if len(w) >= 2 and w not in _LOCATION_NOISE}
+
+
+def _pick_posting(candidates: list[tuple[str, str]], location: str, company: str = "") -> str | None:
+    """Choose one posting among same-title matches, by location.
+
+    Companies post the same role once per country (Hopper had five "Principal Product
+    Manager - Pricing and Personalization" postings live), so a title match alone does
+    not identify the posting. When the location cannot single one out, return None and
+    let the caller fall back to the source's own apply link — no link is recoverable,
+    a link to the wrong role is not."""
+    candidates = [(url, loc) for url, loc in candidates if url]
+    if len(candidates) <= 1:
+        return candidates[0][0] if candidates else None
+    wanted = _location_tokens(location)
+    if wanted:
+        scored = sorted(((len(wanted & _location_tokens(loc)), url) for url, loc in candidates),
+                        key=lambda pair: pair[0], reverse=True)
+        if scored[0][0] > 0 and scored[0][0] > scored[1][0]:
+            return scored[0][1]
+    logger.info(f"apply-url ambiguous: {len(candidates)} same-title postings at "
+                f"{company or '?'} and location {location!r} matches none uniquely")
+    return None
 
 
 def _company_match(query: str, candidate: str) -> bool:
@@ -161,8 +234,11 @@ def _page_title(url: str) -> str:
     return ""
 
 
-def find_apply_url(company: str, title: str) -> str | None:
-    """Try Greenhouse → Lever → Ashby to get a direct apply URL."""
+def find_apply_url(company: str, title: str, location: str = "") -> str | None:
+    """Try Greenhouse → Lever → Ashby to get a direct apply URL.
+
+    `location` disambiguates between same-title postings of the same role in
+    different countries — see _pick_posting()."""
     for slug in _slugify(company):
         # Greenhouse
         try:
@@ -176,9 +252,13 @@ def find_apply_url(company: str, title: str) -> str | None:
                     timeout=5,
                 )
                 if r.status_code == 200:
-                    for j in r.json().get("jobs", []):
-                        if _title_match(title, j.get("title", "")):
-                            return j.get("absolute_url")
+                    picked = _pick_posting([
+                        (j.get("absolute_url"), (j.get("location") or {}).get("name", ""))
+                        for j in r.json().get("jobs", [])
+                        if _title_match(title, j.get("title", ""))
+                    ], location, company)
+                    if picked:
+                        return picked
         except Exception:
             pass
 
@@ -191,11 +271,16 @@ def find_apply_url(company: str, title: str) -> str | None:
                 timeout=5,
             )
             if r.status_code == 200:
-                match = next((p for p in r.json() if _title_match(title, p.get("text", ""))), None)
-                if match:
+                matches = [
+                    (p.get("hostedUrl"), (p.get("categories") or {}).get("location", ""))
+                    for p in r.json() if _title_match(title, p.get("text", ""))
+                ]
+                if matches:
                     lever_name = _page_title(f"https://jobs.lever.co/{slug}")
                     if lever_name and _company_match(company, lever_name):
-                        return match.get("hostedUrl")
+                        picked = _pick_posting(matches, location, company)
+                        if picked:
+                            return picked
         except Exception:
             pass
 
@@ -212,7 +297,7 @@ def find_apply_url(company: str, title: str) -> str | None:
                     "query": (
                         "query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) {"
                         "  jobBoard: jobBoardWithTeams(organizationHostedJobsPageName: $organizationHostedJobsPageName) {"
-                        "    jobPostings { id title } } }"
+                        "    jobPostings { id title locationName } } }"
                     ),
                 },
                 timeout=5,
@@ -224,11 +309,16 @@ def find_apply_url(company: str, title: str) -> str | None:
                     .get("jobBoard", {})
                     .get("jobPostings") or []
                 )
-                match = next((p for p in postings if _title_match(title, p.get("title", ""))), None)
-                if match:
+                matches = [
+                    (f"https://jobs.ashbyhq.com/{slug}/{p['id']}", p.get("locationName") or "")
+                    for p in postings if _title_match(title, p.get("title", ""))
+                ]
+                if matches:
                     ashby_name = re.sub(r"\s+Jobs$", "", _page_title(f"https://jobs.ashbyhq.com/{slug}"), flags=re.I).strip()
                     if ashby_name and _company_match(company, ashby_name):
-                        return f"https://jobs.ashbyhq.com/{slug}/{match['id']}"
+                        picked = _pick_posting(matches, location, company)
+                        if picked:
+                            return picked
         except Exception:
             pass
 
@@ -405,6 +495,41 @@ def _fetch_via_unlocker(job_url: str) -> str | None:
     return _extract_jobicy_apply_url(html)
 
 
+# Aggregators that publish the employer's own apply link on their listing page in a
+# form plain HTTP can read — no ScrapingBee credits, no ATS name-guessing.
+_SOURCE_APPLY_HOSTS = ("jobicy.com",)
+
+
+def _source_apply_url(job_url: str) -> str | None:
+    """The listing site's own authoritative apply link, read straight from the page.
+
+    Preferred over find_apply_url()'s name-guess because it identifies the exact
+    posting instead of inferring it from the title. Jobicy's page is served without a
+    Cloudflare challenge, so the nonce _extract_jobicy_apply_url() replays is readable
+    with a plain GET — _fetch_via_unlocker() stays the paid fallback for when it is not."""
+    if not _url_host_matches(job_url, _SOURCE_APPLY_HOSTS):
+        return None
+    try:
+        r = _safe_get(job_url, timeout=15, headers=_GENERIC_HEADERS)
+        if r.status_code != 200:
+            return None
+    except Exception as e:
+        logger.debug(f"_source_apply_url failed for {job_url}: {e}")
+        return None
+    return _extract_jobicy_apply_url(r.text)
+
+
+def _normalize_apply_url(url: str) -> str:
+    """Trim an apply link to the posting itself: fetch_posting() reads the Ashby job id
+    off the end of the path, so a "/application" deep link would break JD enrichment
+    later. Tracking params go too — they are noise in the DB and in the dashboard."""
+    base, _, query = url.strip().partition("?")
+    if "jobs.ashbyhq.com" in base:
+        base = re.sub(r"/application/?$", "", base)
+    kept = [p for p in query.split("&") if p and not p.lower().startswith("utm_")]
+    return base + ("?" + "&".join(kept) if kept else "")
+
+
 def enrich_url(job: dict) -> None:
     """If job URL is a job-platform page, try to find the company's direct apply URL."""
     url = job.get("url", "")
@@ -426,12 +551,16 @@ def enrich_url(job: dict) -> None:
 
     if not _url_host_matches(url, _PLATFORM_HOSTS):
         return
-    direct = find_apply_url(job.get("company", ""), job.get("title", ""))
+    # Source link first, name-guess second: same reasoning as the early return above —
+    # the aggregator knows which posting it listed, the title matcher only infers it.
+    direct = _source_apply_url(url)
+    if not direct:
+        direct = find_apply_url(job.get("company", ""), job.get("title", ""), job.get("location", ""))
     if not direct:
         direct = _fetch_via_unlocker(url)
     if direct:
-        job["apply_url"] = direct
-        logger.info(f"URL enriched: {job['company']} → {direct}")
+        job["apply_url"] = _normalize_apply_url(direct)
+        logger.info(f"URL enriched: {job['company']} → {job['apply_url']}")
 
 
 _GENERIC_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; job-scraper/1.0)"}
