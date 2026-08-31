@@ -20,7 +20,7 @@ from sources import choicy, company_direct, jobicy, telegram_channels, jobgether
 from config import (
     ATS_THRESHOLD, COMPANY_COOLDOWN_DAYS, MAX_GPT_CALLS_PER_RUN, USE_CLOUD_SCORING,
     RESUME_AUTOGEN_MIN_SCORE, RESUME_AUTOGEN_MIN_JD_CHARS, RESUME_AUTOGEN_CAP_PER_RUN,
-    COMPANY_REJECTION_COOLDOWN_DAYS,
+    COMPANY_REJECTION_COOLDOWN_DAYS, SCORING_MIN_JD_CHARS,
     validate_secrets,
 )
 from utils import strip_html, enrich_url, normalize_job_key, fetch_jd_from_url, fetch_url_generic
@@ -91,6 +91,20 @@ def load_resume() -> str:
     text = RESUME_PATH.read_text(encoding="utf-8")
     logger.info(f"Resume loaded: {len(text)} chars")
     return text
+
+
+def jd_needs_topup(job: dict) -> bool:
+    """Should the description be re-read from the posting itself before scoring?
+
+    True when we hold less text than a real job ad has (SCORING_MIN_JD_CHARS), or for
+    RemoteOK, which stores an AI summary rather than the JD however long it is. Both
+    need a direct posting URL that is not the listing page we already read."""
+    apply_url = job.get("apply_url") or ""
+    if not apply_url or apply_url == job.get("url", ""):
+        return False
+    if job.get("source", "").lower() == "remoteok":
+        return True
+    return len(job.get("description") or "") < SCORING_MIN_JD_CHARS
 
 
 def run() -> None:
@@ -229,19 +243,26 @@ def run() -> None:
             else:
                 job["description"] = message_text
 
-        # For RemoteOK jobs: fetch full JD from the direct URL (RemoteOK only stores AI summary)
-        if job.get("source", "").lower() == "remoteok":
-            apply_url = job.get("apply_url") or ""
-            jd_enriched = False
-            if apply_url and apply_url != job.get("url", ""):
-                full_jd = fetch_jd_from_url(apply_url) or fetch_url_generic(apply_url)
-                if full_jd and len(full_jd) > len(job.get("description") or ""):
-                    job["description"] = full_jd
-                    jd_enriched = True
-                    logger.info(f"  Full JD fetched: {len(full_jd)} chars for {job['title']} @ {job['company']}")
-            if not jd_enriched:
-                job["incomplete_description"] = True
-                logger.info(f"  ⚠️ No direct URL — scoring {job['title']} @ {job['company']} from RemoteOK summary")
+        # Top up a thin description from the posting itself. RemoteOK always needs it
+        # (it stores only an AI summary), and so does any source whose listing page is
+        # rendered client-side: remoteworldwide.net served a plain fetch the string
+        # "Loading..." and nothing else, so Chili Piper #84808 was scored — and had a
+        # resume generated — from 232 characters, while enrich_url had already resolved
+        # the real Ashby posting nobody read (2026-08-31). The check is now about how
+        # much text we actually hold, not about which source it came from.
+        description = job.get("description") or ""
+        if jd_needs_topup(job):
+            apply_url = job["apply_url"]
+            full_jd = fetch_jd_from_url(apply_url) or fetch_url_generic(apply_url)
+            if full_jd and len(full_jd) > len(description):
+                job["description"] = description = full_jd
+                logger.info(f"  Full JD fetched: {len(full_jd)} chars for {job['title']} @ {job['company']}")
+        if len(description) < SCORING_MIN_JD_CHARS:
+            # Scored anyway so the card stays visible, but the score is marked as read
+            # from a stub — short JDs inflate it, which is why the local scorer was retired.
+            job["incomplete_description"] = True
+            logger.info(f"  ⚠️ Thin JD ({len(description)} chars) — {job['title']} @ {job['company']} "
+                        f"scored from a stub")
 
         # Try to extract company name from description if missing
         if not job.get("company") and job.get("description"):

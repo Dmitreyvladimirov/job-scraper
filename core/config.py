@@ -128,6 +128,15 @@ RESUME_MIN_JD_CHARS = 200
 # (~900 chars) and above every stub.
 INTAKE_MIN_JD_CHARS = 400
 
+# The same floor, applied to scraped postings (2026-08-31). Below it a description is
+# a listing stub rather than a job ad -- an aggregator page that renders client-side
+# hands a plain fetch its "Loading..." placeholder, and the scorer then rates the
+# title and the company name. Chili Piper #84808 was 232 such characters, scored 84,
+# and its resume came out with no AI-consulting block on a JD that asks for hands-on
+# AI outright. Scraped rows are flagged rather than refused (unlike intake, which can
+# ask a human for the text): the card stays visible, its score marked provisional.
+SCORING_MIN_JD_CHARS = 400
+
 # Title/company/location are read out of the JD text by Haiku: an ATS API gives a
 # title but only a board slug for the company, an aggregator page gives neither,
 # and a pasted text gives nothing structured at all. One call, ~$0.0005.

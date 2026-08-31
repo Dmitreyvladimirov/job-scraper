@@ -107,6 +107,12 @@ def init_db() -> None:
                 # job's current_status becomes 'applied'.
                 cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS applied_at TIMESTAMP")
 
+                # A score read off a listing stub rather than a real JD (2026-08-31).
+                # The flag existed in scraper.py but only ever reached Notion, so the
+                # dashboard showed 84/100 for Chili Piper #84808 with no hint that the
+                # scorer had 232 characters to work with.
+                cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS incomplete_description BOOLEAN DEFAULT FALSE")
+
                 # Cloud scoring (USE_CLOUD_SCORING) — additive, idempotent.
                 # pipeline_run_id correlates a row with the same vacancy's records in the
                 # resumebuilder-cloud DB; indexed because that join is the whole point of it.
@@ -356,9 +362,10 @@ def log_job(
                         why_apply, matched_keywords, missed_keywords, penalty_reason,
                         role_score, domain_score, domain_value_score, domain_exp_score,
                         keyword_score, location_score, location_reason, salary,
-                        location, pipeline_run_id, scoring_source, shadow_score, shadow_payload)
+                        location, pipeline_run_id, scoring_source, shadow_score, shadow_payload,
+                        incomplete_description)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                               %s,%s,%s,%s,%s)
+                               %s,%s,%s,%s,%s,%s)
                        RETURNING id""",
                     (
                         run_id,
@@ -391,6 +398,7 @@ def log_job(
                         scoring_source,
                         shadow_score,
                         json.dumps(shadow_payload) if shadow_payload is not None else None,
+                        bool(job.get("incomplete_description")),
                     ),
                 )
                 job_id = cur.fetchone()["id"]

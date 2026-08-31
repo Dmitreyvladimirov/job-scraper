@@ -5,7 +5,7 @@
         <div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:4px">{{ job.company or '—' }}{% if job.source %} · via {{ job.source }}{% endif %} · <span class="card-link" title="Нажми, чтобы скопировать ссылку на эту карточку" onclick="navigator.clipboard.writeText(location.origin + '/kanban?job={{ job.id }}');window.showToast && window.showToast('Ссылка на карточку скопирована — #{{ job.id }}')">#{{ job.id }} 🔗</span></div>
         <div style="font-family:var(--font-heading);font-weight:600;font-size:24px;line-height:1.2">{{ job.title }}</div>
       </div>
-      <div style="text-align:center;flex:none"><div style="font-family:var(--font-heading);font-size:38px;line-height:1;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ job.ats_score if job.ats_score is not none else '—' }}</div><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600)">ATS</div></div>
+      <div style="text-align:center;flex:none"><div style="font-family:var(--font-heading);font-size:38px;line-height:1;font-feature-settings:'tnum';color:var(--color-accent-700)">{{ job.ats_score if job.ats_score is not none else '—' }}</div><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600)">ATS{% if job.incomplete_description %} <span style="color:var(--color-accent-700);cursor:help" title="Оценка выставлена по обрывку описания — страница вакансии не отдала текст. Открой постинг: балл и разбор ниже могут не отражать вакансию">?</span>{% endif %}</div></div>
       <button type="button" class="btn btn-icon btn-ghost" aria-label="Edit card" title="Edit card" style="margin:-4px 0 0 0"
               hx-get="/jobs/{{ job.id }}/edit-form" hx-target="#detail-modal-slot" hx-swap="innerHTML"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg></button>
       <button type="button" class="btn btn-icon btn-ghost" aria-label="Close" style="margin:-4px -6px 0 0" onclick="document.getElementById('job-detail-dialog').remove()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
@@ -76,6 +76,10 @@
 
     <div class="dialog-actions" style="margin-top:6px">
       {% set posting_url = (job.apply_url or job.url)|safe_url %}
+      {# Re-score lives here as well as in the Add-job duplicate dialog: when a card's
+         JD was a stub at scrape time (see the "?" next to ATS), fixing the text is
+         only half the repair — the number has to be recomputed too (2026-08-31). #}
+      {% with job_id = job.id, ats_score = job.ats_score %}{% include 'partials/rescore_slot.html' %}{% endwith %}
       {% if posting_url %}<a class="btn btn-ghost" href="{{ posting_url }}" target="_blank" rel="noopener noreferrer" style="gap:5px">Open posting<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>{% endif %}
       {% include 'partials/resume_button.html' %}
       <span style="flex:1"></span>

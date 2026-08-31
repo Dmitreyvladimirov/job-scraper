@@ -134,7 +134,7 @@
           <div class="kc-head">
             <span class="card-select-box" data-select-box></span>
             <div class="kc-title kc-title-flex">{{ job.title }}</div>
-            <span class="kc-score">{{ job.ats_score if job.ats_score is not none else '—' }}</span>
+            <span class="kc-score">{{ job.ats_score if job.ats_score is not none else '—' }}{% if job.incomplete_description %}<span style="color:var(--color-accent-700)" title="Оценка выставлена по обрывку описания — страница вакансии не отдала текст. Открой постинг: балл и разбор ниже могут не отражать вакансию">?</span>{% endif %}</span>
           </div>
           <div class="kc-sub kc-indent">{{ job.company or '—' }}</div>
           {% set tags = domain_tags(job.domain) %}

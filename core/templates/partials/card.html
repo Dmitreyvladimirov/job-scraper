@@ -2,7 +2,7 @@
   <summary style="display:flex;align-items:center;gap:18px;padding:14px 0;cursor:pointer;list-style:none">
     <div style="width:56px;text-align:center;flex:none">
       <div style="font-family:var(--font-heading);font-size:29px;line-height:1;font-feature-settings:'tnum';color:{% if job.ats_score and job.ats_score >= 85 %}var(--color-accent-700){% elif job.ats_score and job.ats_score >= 70 %}var(--color-accent-500){% else %}var(--color-neutral-600){% endif %}">{{ job.ats_score if job.ats_score is not none else '—' }}</div>
-      <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600)">ATS</div>
+      <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600)">ATS{% if job.incomplete_description %} <span style="color:var(--color-accent-700);cursor:help" title="Оценка выставлена по обрывку описания — страница вакансии не отдала текст. Открой постинг: балл и разбор ниже могут не отражать вакансию">?</span>{% endif %}</div>
     </div>
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
