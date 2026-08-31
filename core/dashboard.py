@@ -1156,9 +1156,13 @@ def mail_queue(request: Request):
     card has been touched yet; v1 applies nothing without this screen or the
     Telegram buttons."""
     _authenticate(request)
+    from mail_agent import transition_needed
     events = db.get_pending_mail_events()
     for event in events:
-        if not event.get("job_id"):
+        if event.get("job_id"):
+            event["stale_proposal"] = not transition_needed(
+                event.get("proposed_status"), event.get("job_status"))
+        else:
             event.update(_mail_event_hints(event))
     return templates.TemplateResponse(request, "mail_queue.html", {
         "active": "mail",
@@ -1169,12 +1173,44 @@ def mail_queue(request: Request):
     })
 
 
-def _mail_event_error(event_id: int, message: str) -> HTMLResponse:
-    """Inline, swappable error for the mail queue. Kept as a 200 on purpose — see
-    the note in resolve_mail_event."""
-    safe = html_escape(message)
-    return HTMLResponse(
-        f'<div id="mail-event-{event_id}" class="mail-event-error">{safe}</div>')
+def _mail_event_error(request: Request, event_id: int, message: str) -> HTMLResponse:
+    """Re-render one queue row with an inline error. Kept as a 200 on purpose — see
+    the note in resolve_mail_event.
+
+    The row is rendered rather than replaced: swapping in a bare error line took the
+    email, the card link and the Пропустить button with it, so a failed apply left
+    nothing to act on but a page reload (Coralogix, 2026-08-31)."""
+    from mail_agent import transition_needed
+    event = next((e for e in db.get_pending_mail_events() if e["id"] == event_id), None)
+    if event is None:
+        # Resolved by someone else in the meantime — nothing left to re-render.
+        return HTMLResponse(
+            f'<div id="mail-event-{event_id}" class="mail-event-error">{html_escape(message)}</div>')
+    if event.get("job_id"):
+        event["stale_proposal"] = not transition_needed(
+            event.get("proposed_status"), event.get("job_status"))
+    else:
+        event.update(_mail_event_hints(event))
+    return templates.TemplateResponse(request, "partials/mail_event.html", {
+        "e": event, "error": message,
+        "statuses": CURRENT_STATUSES, "status_labels": STATUS_LABELS,
+        "reasons": [(r, REJECTION_REASON_LABELS[r]) for r in USER_REJECTION_REASONS],
+    })
+
+
+def _mail_error_text(error: str, job_id: int | None, status: str | None) -> str:
+    """db.update_job_status speaks in transitions ("Invalid transition screen ->
+    screen"), which says nothing about what to do next. The common case is a
+    proposal the card has already outgrown between the mail sweep and the click."""
+    if error.startswith("Invalid transition"):
+        _, _, pair = error.partition("Invalid transition ")
+        current, _, target = pair.partition(" -> ")
+        if current == target:
+            return (f"Карточка #{job_id} уже в статусе «{STATUS_LABELS.get(current, current)}» — "
+                    "применять нечего, жми «Пропустить»")
+        return (f"Из «{STATUS_LABELS.get(current, current)}» нельзя перевести в "
+                f"«{STATUS_LABELS.get(target, target)}» — выбери другой статус или пропусти письмо")
+    return error
 
 
 @app.post("/mail/events/{event_id}/resolve", response_class=HTMLResponse)
@@ -1198,12 +1234,12 @@ def resolve_mail_event(
     # swap a 4xx response, so the old behaviour left the button looking dead. Real
     # protocol errors (an unknown action above) still raise.
     if action == "confirmed" and not jid:
-        return _mail_event_error(event_id, "Нужен номер карточки — впиши #id и нажми снова")
+        return _mail_event_error(request, event_id, "Нужен номер карточки — впиши #id и нажми снова")
     try:
         db.resolve_mail_event(event_id, action, job_id=jid,
                               status=status or None, reason=reason or None)
     except ValueError as e:
-        return _mail_event_error(event_id, str(e))
+        return _mail_event_error(request, event_id, _mail_error_text(str(e), jid, status))
     verb = "применено" if action == "confirmed" else "пропущено"
     return HTMLResponse(
         f'<div id="mail-event-{event_id}" style="font-size:12.5px;color:var(--color-neutral-600);'

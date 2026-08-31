@@ -167,14 +167,32 @@ def classify(msg: dict, call_llm) -> tuple[dict | None, str]:
     return parsed, "none"
 
 
+def transition_needed(target: str | None, current: str | None) -> bool:
+    """Would moving the card to `target` actually change anything?
+
+    False when the card already sits at or past that stage. decide() applies this
+    when the mail arrives; the review queue applies it again at render time, because
+    the card can move between the sweep and the click — Coralogix, 2026-08-31: an
+    interview_scheduled proposal for 'screen' recorded on 28.08 was confirmed after
+    the card had been moved to screen by hand, update_job_status refused
+    'screen -> screen', and the row was replaced by a raw "Invalid transition" line."""
+    from config import FUNNEL_ORDER
+
+    if not target:
+        return False
+    if target == "rejected":
+        return current != "rejected"
+    if current in FUNNEL_ORDER and target in FUNNEL_ORDER:
+        return FUNNEL_ORDER.index(target) > FUNNEL_ORDER.index(current)
+    return True
+
+
 def decide(label: str, candidates: list[dict]) -> dict:
     """Pure function: label + candidate cards -> what to record. No I/O, no LLM.
 
     Ambiguity is never guessed away: two open applications at the same company
     (the Payoneer case) means the human picks. Idempotency: a target stage at or
     behind the card's current stage records a note instead of a transition."""
-    from config import FUNNEL_ORDER
-
     target, reason, _needs_confirm = MAIL_CLASSES.get(label, (None, None, False))
     job = candidates[0] if len(candidates) == 1 else None
     if job is None and candidates:
@@ -217,13 +235,9 @@ def decide(label: str, candidates: list[dict]) -> dict:
                     "proposed_reason": None, "note": "card was auto-aged — reopen?"}
         return {"action": "ignored", "job_id": job["id"],
                 "proposed_status": None, "proposed_reason": None}
-    if target != "rejected" and current in FUNNEL_ORDER and target in FUNNEL_ORDER \
-            and FUNNEL_ORDER.index(target) <= FUNNEL_ORDER.index(current):
+    if not transition_needed(target, current):
         # Already at or past this stage — Dimitry recorded it manually, or an
         # earlier email in the same thread did.
-        return {"action": "ignored", "job_id": job["id"],
-                "proposed_status": None, "proposed_reason": None}
-    if target == "rejected" and current == "rejected":
         return {"action": "ignored", "job_id": job["id"],
                 "proposed_status": None, "proposed_reason": None}
 

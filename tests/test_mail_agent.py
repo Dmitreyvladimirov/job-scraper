@@ -265,3 +265,26 @@ def test_two_open_applications_still_go_to_the_human():
                                           _card(56455, company="Adapty")])
     assert out["job_id"] is None and out["action"] == "pending"
     assert "2 candidate cards" in out["note"]
+
+
+# --- proposals the card has already outgrown (2026-08-31) ---
+
+def test_transition_needed_rejects_a_move_to_the_same_stage():
+    # Coralogix: an interview_scheduled proposal for 'screen' recorded on 28.08,
+    # confirmed after the card had already been moved to screen by hand.
+    assert not mail_agent.transition_needed("screen", "screen")
+
+
+def test_transition_needed_allows_forward_and_blocks_backward():
+    assert mail_agent.transition_needed("interview", "screen")
+    assert not mail_agent.transition_needed("applied", "interview")
+
+
+def test_transition_needed_on_rejections():
+    assert mail_agent.transition_needed("rejected", "screen")
+    assert not mail_agent.transition_needed("rejected", "rejected")
+
+
+def test_transition_needed_says_no_when_there_is_no_target():
+    # Note-only classes (acknowledgement, reminder) carry no target stage.
+    assert not mail_agent.transition_needed(None, "applied")

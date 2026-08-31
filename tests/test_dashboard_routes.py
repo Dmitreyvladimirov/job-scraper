@@ -776,3 +776,19 @@ def test_a_slot_is_not_due_while_the_run_may_still_be_finishing():
 
 def test_monday_before_the_first_slot_looks_back_to_friday():
     assert dashboard._last_due_run(_utc(2026, 8, 31, 3)) == _utc(2026, 8, 28, 15)
+
+
+def test_transition_error_is_translated_into_something_actionable():
+    # db.update_job_status speaks in transitions; the queue has to say what to do.
+    msg = dashboard._mail_error_text("Invalid transition screen -> screen", 79253, "screen")
+    assert "#79253" in msg and "Screen" in msg and "Пропустить" in msg
+    assert "Invalid transition" not in msg
+
+
+def test_backward_transition_error_names_both_stages():
+    msg = dashboard._mail_error_text("Invalid transition interview -> applied", 1, "applied")
+    assert "Interview" in msg and "Applied" in msg
+
+
+def test_unrelated_errors_pass_through_untouched():
+    assert dashboard._mail_error_text("Unknown job id 999", 999, None) == "Unknown job id 999"
