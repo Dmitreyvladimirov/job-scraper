@@ -20,9 +20,9 @@ Project notes for Claude Code sessions.
 - Scraper tech spec: `SPEC.md` (reference); dashboard spec:
   `Design/frontend-spec/SPEC_FRONTEND.md` (reference, mostly implemented)
 - Source audit: `SOURCES_DECISION.md` (reference; template for new sources)
-- Светочка (personal assistant, separate repo `svetochka` when it exists):
-  `SPEC_SVETA.md` is the accepted spec, `SVETOCHKA.md` the research behind it.
-  No code yet — code is written only against the spec, stage Э0 first.
+- Svetochka (personal assistant) is a separate project with nothing shared:
+  repo `Dmitreyvladimirov/SvetochkaPersonalAssistant`, its own Railway project.
+  Its spec and research live there; this repo only lent it patterns.
 - Cloud services: `/Users/DimaKu/Documents/Coding/resumebuilder-cloud`
   (scoring/cards/resume; specs in its `docs/`)
 
