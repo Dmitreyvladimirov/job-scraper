@@ -47,6 +47,9 @@ See `PROJECT.md` → "Активный трек". Short version:
 - Do not delete or rewrite user-authored project docs without explicit approval
   (standing rule in `CONTEXT.md` — docs were wrongly deleted once on 2026-07-07).
 - Keep changes scoped to the task at hand.
+- All documentation committed to git is in English (Dimitry's standing rule,
+  2026-09-03). Bot-facing strings and quoted user messages stay in their
+  original language — they are data, not documentation.
 - If a change touches data model or workflow contracts, verify against
   `Design/design.md` / `SPEC_FRONTEND.md` before editing code.
 - Scraper is live (cron 4×/день пн-пт) — never break the run path; feature
